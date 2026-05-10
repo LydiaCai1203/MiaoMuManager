@@ -31,16 +31,18 @@ public class AuthController {
 
   @PostMapping("/login")
   public ApiResponse<Map<String, Object>> login(@Valid @RequestBody LoginRequest body) {
+    String roleCode = "admin".equalsIgnoreCase(body.username()) ? "ADMIN" : "USER";
     return ApiResponse.success(Map.of(
         "token", "dev-token-" + body.username(),
-        "user", new AuthUser(body.username(), "管理员", "ADMIN")
+        "user", new AuthUser(body.username(), body.username(), roleCode)
     ));
   }
 
   @GetMapping("/me")
   public ApiResponse<AuthUser> me(Authentication authentication) {
     String username = authentication == null ? "admin" : String.valueOf(authentication.getPrincipal()).replace("dev-token-", "");
-    return ApiResponse.success(new AuthUser(username, "管理员", "ADMIN"));
+    String roleCode = "admin".equalsIgnoreCase(username) ? "ADMIN" : "USER";
+    return ApiResponse.success(new AuthUser(username, username, roleCode));
   }
 
   @GetMapping("/users")

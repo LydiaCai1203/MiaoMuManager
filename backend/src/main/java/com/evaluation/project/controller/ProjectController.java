@@ -14,7 +14,6 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -62,5 +61,20 @@ public class ProjectController {
   @PostMapping("/{id}/parties")
   public ApiResponse<ProjectPartyResponse> createParty(@PathVariable Long id, @Valid @RequestBody ProjectPartyRequest request) {
     return ApiResponse.success(projectService.createParty(id, request));
+  }
+
+  @PutMapping("/{projectId}/parties/{partyId}")
+  public ApiResponse<ProjectPartyResponse> updateParty(
+      @PathVariable Long projectId,
+      @PathVariable Long partyId,
+      @Valid @RequestBody ProjectPartyRequest request
+  ) {
+    return ApiResponse.success(projectService.updateParty(projectId, partyId, request));
+  }
+
+  @DeleteMapping("/{projectId}/parties/{partyId}")
+  public ApiResponse<Boolean> deleteParty(@PathVariable Long projectId, @PathVariable Long partyId) {
+    projectService.deleteParty(projectId, partyId);
+    return ApiResponse.success(true);
   }
 }

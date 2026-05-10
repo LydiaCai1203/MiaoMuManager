@@ -194,6 +194,51 @@ public class ProjectService {
         .orElseThrow(() -> new IllegalArgumentException("对象创建失败"));
   }
 
+  @Transactional
+  public ProjectPartyResponse updateParty(Long projectId, Long partyId, ProjectPartyRequest request) {
+    ensurePartyExists(projectId, partyId);
+    String sql = """
+        UPDATE evaluation_party
+        SET party_type = ?,
+            party_name = ?,
+            id_no = ?,
+            contact_phone = ?,
+            village_group = ?,
+            tenant_name = ?,
+            location_text = ?,
+            remark = ?,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ? AND project_id = ? AND deleted = 0
+        """;
+    jdbcTemplate.update(
+        sql,
+        request.partyType().name(),
+        request.partyName(),
+        request.idNo(),
+        request.contactPhone(),
+        request.villageGroup(),
+        request.tenantName(),
+        request.locationText(),
+        request.remark(),
+        partyId,
+        projectId
+    );
+    return listParties(projectId).stream()
+        .filter(item -> item.id().equals(partyId))
+        .findFirst()
+        .orElseThrow(() -> new IllegalArgumentException("对象不存在: " + partyId));
+  }
+
+  @Transactional
+  public void deleteParty(Long projectId, Long partyId) {
+    ensurePartyExists(projectId, partyId);
+    jdbcTemplate.update(
+        "UPDATE evaluation_party SET deleted = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND project_id = ?",
+        partyId,
+        projectId
+    );
+  }
+
   private ProjectResponse toProjectResponse(
       Long id,
       String projectCode,
@@ -230,6 +275,19 @@ public class ProjectService {
     );
     if (count == null || count == 0) {
       throw new IllegalArgumentException("项目不存在: " + id);
+    }
+  }
+
+  private void ensurePartyExists(Long projectId, Long partyId) {
+    ensureProjectExists(projectId);
+    Integer count = jdbcTemplate.queryForObject(
+        "SELECT count(*) FROM evaluation_party WHERE id = ? AND project_id = ? AND deleted = 0",
+        Integer.class,
+        partyId,
+        projectId
+    );
+    if (count == null || count == 0) {
+      throw new IllegalArgumentException("对象不存在: " + partyId);
     }
   }
 

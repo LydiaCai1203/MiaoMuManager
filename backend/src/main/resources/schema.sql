@@ -169,3 +169,19 @@ CREATE TABLE IF NOT EXISTS sys_user (
   updated_by BIGINT,
   deleted SMALLINT NOT NULL DEFAULT 0
 );
+
+CREATE TABLE IF NOT EXISTS option_item (
+  id BIGSERIAL PRIMARY KEY,
+  group_code VARCHAR(64) NOT NULL,
+  option_value VARCHAR(64) NOT NULL,
+  option_label VARCHAR(128) NOT NULL,
+  sort_order INT NOT NULL DEFAULT 0,
+  enabled SMALLINT NOT NULL DEFAULT 1,
+  remark VARCHAR(500),
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  created_by BIGINT,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_by BIGINT,
+  deleted SMALLINT NOT NULL DEFAULT 0,
+  CONSTRAINT uk_option_item_group_value UNIQUE (group_code, option_value)
+);
