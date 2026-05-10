@@ -1,0 +1,26 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: asset-evaluation-backend
+  datasource:
+    url: jdbc:postgresql://localhost:5432/asset_evaluation
+    username: asset_app
+    password: asset_app_123
+    driver-class-name: org.postgresql.Driver
+  sql:
+    init:
+      mode: always
+  data:
+    redis:
+      host: localhost
+      port: 6379
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+
+logging:
+  level:
+    root: INFO

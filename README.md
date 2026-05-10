@@ -1,6 +1,27 @@
 # 资产评估系统
 
-基于 Spring Boot 的资产评估管理系统，支持苗木评估、附属物评估、房屋评估三大模块。
+这是一个前后端分离的资产评估系统项目骨架，支持苗木评估、附属物评估、房屋评估三大模块。
+
+## 当前仓库结构
+
+```text
+backend/                后端 Spring Boot 工程骨架
+frontend/               前端 Vue 3 + Vite 工程骨架
+sql/                    SQL 脚本目录
+templates/              Excel 与报告模板目录
+.monkeycode/docs/       设计文档与数据库初稿
+README.md
+苗木模板.xlsx
+附属物评估模板.xlsx
+```
+
+## 已完成的设计文档
+
+- `.monkeycode/docs/system-design.md`
+- `.monkeycode/docs/schema.sql`
+- `.monkeycode/docs/implementation-plan.md`
+
+建议先阅读设计文档，再进入具体业务实现。
 
 ## 功能特性
 
