@@ -6,11 +6,13 @@
 /workspace/backend/src/main/java/com/evaluation/house/controller/HouseController.java
 /workspace/backend/src/main/java/com/evaluation/auth/model/UserRequest.java
 /workspace/backend/src/main/java/com/evaluation/appendage/controller/AppendageController.java
+/workspace/backend/src/main/java/com/evaluation/configoption/model/OptionItemRequest.java
 /workspace/backend/src/main/java/com/evaluation/appendage/model/AppendageEvaluationItemResponse.java
 /workspace/backend/src/main/java/com/evaluation/seedling/model/SeedlingEvaluationItemRequest.java
 /workspace/backend/src/main/java/com/evaluation/project/model/PartyType.java
 /workspace/backend/src/main/java/com/evaluation/price/model/PriceRequest.java
 /workspace/backend/src/main/java/com/evaluation/appendage/service/AppendageService.java
+/workspace/backend/src/main/java/com/evaluation/configoption/controller/OptionItemController.java
 /workspace/backend/src/main/java/com/evaluation/auth/model/LoginRequest.java
 /workspace/backend/src/main/java/com/evaluation/project/controller/ProjectController.java
 /workspace/backend/src/main/java/com/evaluation/common/config/SecurityConfig.java
@@ -26,7 +28,9 @@
 /workspace/backend/src/main/java/com/evaluation/price/service/PriceService.java
 /workspace/backend/src/main/java/com/evaluation/seedling/model/SeedlingEvaluationItemResponse.java
 /workspace/backend/src/main/java/com/evaluation/house/model/HouseEvaluationResponse.java
+/workspace/backend/src/main/java/com/evaluation/configoption/service/OptionItemService.java
 /workspace/backend/src/main/java/com/evaluation/project/model/ProjectPartyResponse.java
+/workspace/backend/src/main/java/com/evaluation/configoption/model/OptionItemResponse.java
 /workspace/backend/src/main/java/com/evaluation/auth/model/UserResponse.java
 /workspace/backend/src/main/java/com/evaluation/seedling/controller/SeedlingController.java
 /workspace/backend/src/main/java/com/evaluation/appendage/model/AppendageEvaluationResponse.java

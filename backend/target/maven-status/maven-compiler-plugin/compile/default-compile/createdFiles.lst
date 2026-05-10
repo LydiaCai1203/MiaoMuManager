@@ -1,3 +1,4 @@
+com/evaluation/configoption/controller/OptionItemController.class
 com/evaluation/seedling/controller/SeedlingController.class
 com/evaluation/common/config/SecurityConfig.class
 com/evaluation/importtask/model/ImportResult.class
@@ -10,7 +11,9 @@ com/evaluation/importtask/service/TemplateService.class
 com/evaluation/house/service/HouseService.class
 com/evaluation/auth/model/AuthUser.class
 com/evaluation/auth/model/LoginRequest.class
+com/evaluation/configoption/service/OptionItemService.class
 com/evaluation/auth/model/UserRequest.class
+com/evaluation/configoption/model/OptionItemRequest.class
 com/evaluation/project/controller/ProjectController.class
 com/evaluation/auth/service/UserService.class
 com/evaluation/importtask/service/ImportService$AppendageRow.class
@@ -26,3 +29,4 @@ com/evaluation/price/service/PriceService.class
 com/evaluation/common/api/GlobalExceptionHandler.class
 com/evaluation/price/model/PriceRequest.class
 com/evaluation/AssetEvaluationApplication.class
+com/evaluation/configoption/model/OptionItemResponse.class

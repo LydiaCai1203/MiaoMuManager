@@ -48,6 +48,10 @@ a {
   background: rgba(255, 255, 255, 0.14);
 }
 
+.nav-group a.router-link-active {
+  background: rgba(114, 134, 255, 0.22);
+}
+
 .content-shell {
   display: flex;
   flex-direction: column;
@@ -138,6 +142,121 @@ a {
   font-weight: 600;
 }
 
+.summary-label {
+  font-size: 0.85rem;
+  color: #667085;
+}
+
+.record-page-hero {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 0 0 20px;
+}
+
+.record-page-kicker {
+  margin-bottom: 6px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #315efb;
+}
+
+.record-page-summary {
+  min-width: 180px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #eff4ff 0%, #f8fbff 100%);
+  text-align: right;
+}
+
+.record-page-summary strong {
+  font-size: 1.4rem;
+}
+
+.section-toolbar {
+  margin-top: 8px;
+}
+
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.status-draft {
+  background: #f2f4f7;
+  color: #475467;
+}
+
+.status-submitted {
+  background: #ecfdf3;
+  color: #027a48;
+}
+
+.compact-actions {
+  margin-bottom: 0;
+  gap: 12px;
+}
+
+.list-header-main {
+  margin-bottom: 12px;
+}
+
+.list-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: #f8fafc;
+}
+
+.list-filters {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.table-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.detail-item {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+  border-radius: 12px;
+  background: #f7f9fc;
+}
+
+.detail-label,
+.muted-text {
+  color: #667085;
+}
+
 .import-result-card {
   margin-top: 16px;
   padding: 16px;
@@ -166,5 +285,28 @@ a {
 
   .grid-form {
     grid-template-columns: 1fr;
+  }
+
+  .record-page-hero {
+    flex-direction: column;
+  }
+
+  .record-page-summary {
+    width: 100%;
+    text-align: left;
+  }
+
+  .detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .list-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .list-filters {
+    flex-direction: column;
+    align-items: stretch;
   }
 }

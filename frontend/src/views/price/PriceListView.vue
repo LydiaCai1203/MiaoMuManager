@@ -1,12 +1,45 @@
 <template>
   <div class="project-page">
     <div class="page-card">
-      <div class="section-header">
-        <h2>{{ editingId ? '编辑价格项' : '新增价格项' }}</h2>
+      <div class="section-header list-header-main">
+        <h2>价格列表</h2>
+        <div class="section-actions compact-actions">
+          <el-button type="primary" @click="openCreateDialog">新建价格项</el-button>
+        </div>
       </div>
+      <div class="list-toolbar">
+        <div class="list-filters">
+          <el-input v-model="keyword" placeholder="搜索分类/名称/规格" clearable style="width: 240px" />
+        </div>
+        <el-button text @click="loadPrices">刷新</el-button>
+      </div>
+      <el-table :data="filteredPrices">
+        <el-table-column label="分类" min-width="140">
+          <template #default="scope">
+            {{ getAssetCategoryLabel(scope.row.assetCategory) }}
+          </template>
+        </el-table-column>
+        <el-table-column prop="assetName" label="名称" min-width="160" />
+        <el-table-column prop="specification" label="规格" min-width="180" />
+        <el-table-column prop="unit" label="单位" width="100" />
+        <el-table-column prop="basePrice" label="价格" width="120" />
+        <el-table-column label="操作" width="170" align="center">
+          <template #default="scope">
+            <div class="table-actions">
+              <el-button text type="primary" @click="fillPrice(scope.row)">编辑</el-button>
+              <el-button text type="danger" @click="removePrice(scope.row.id)">删除</el-button>
+            </div>
+          </template>
+        </el-table-column>
+      </el-table>
+    </div>
+
+    <el-dialog v-model="dialogVisible" :title="editingId ? '编辑价格项' : '新增价格项'" width="720px" destroy-on-close>
       <el-form ref="formRef" :model="form" :rules="rules" label-position="top" class="grid-form">
         <el-form-item label="资产分类" prop="assetCategory">
-          <el-input v-model="form.assetCategory" />
+          <el-select v-model="form.assetCategory">
+            <el-option v-for="item in assetCategoryOptions" :key="item.optionValue" :label="item.optionLabel" :value="item.optionValue" />
+          </el-select>
         </el-form-item>
         <el-form-item label="资产名称" prop="assetName">
           <el-input v-model="form.assetName" />
@@ -24,34 +57,14 @@
           <el-input v-model="form.effectiveDate" />
         </el-form-item>
       </el-form>
-      <div class="section-actions">
-        <el-button type="primary" @click="submitPrice">保存价格项</el-button>
-        <el-button @click="resetForm">重置</el-button>
-      </div>
-    </div>
-
-    <div class="page-card">
-      <div class="section-header">
-        <h2>价格列表</h2>
-        <div class="section-actions">
-          <el-input v-model="keyword" placeholder="搜索分类/名称/规格" clearable style="width: 240px" />
-          <el-button text @click="loadPrices">刷新</el-button>
+      <template #footer>
+        <div class="dialog-footer">
+          <el-button @click="handleDialogClose">取消</el-button>
+          <el-button @click="resetForm">重置</el-button>
+          <el-button type="primary" @click="submitPrice">{{ editingId ? '保存价格项' : '新增价格项' }}</el-button>
         </div>
-      </div>
-      <el-table :data="filteredPrices">
-        <el-table-column prop="assetCategory" label="分类" min-width="140" />
-        <el-table-column prop="assetName" label="名称" min-width="160" />
-        <el-table-column prop="specification" label="规格" min-width="180" />
-        <el-table-column prop="unit" label="单位" width="100" />
-        <el-table-column prop="basePrice" label="价格" width="120" />
-        <el-table-column label="操作" width="120">
-          <template #default="scope">
-            <el-button text @click="fillPrice(scope.row)">编辑</el-button>
-            <el-button text type="danger" @click="removePrice(scope.row.id)">删除</el-button>
-          </template>
-        </el-table-column>
-      </el-table>
-    </div>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -60,11 +73,14 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { createPrice, deletePrice, getPrices, updatePrice, type PriceRecord } from '../../api/price'
+import { getOptions, type OptionItemRecord } from '../../api/options'
 
 const prices = ref<PriceRecord[]>([])
 const editingId = ref<number | null>(null)
 const keyword = ref('')
 const formRef = ref<FormInstance>()
+const dialogVisible = ref(false)
+const assetCategoryOptions = ref<OptionItemRecord[]>([])
 
 const defaultForm = () => ({
   assetCategory: 'SEEDLING',
@@ -100,15 +116,34 @@ const filteredPrices = computed(() => {
   })
 })
 
+function getAssetCategoryLabel(value: string) {
+  return assetCategoryOptions.value.find((item) => item.optionValue === value)?.optionLabel ?? value
+}
+
 function resetForm() {
   editingId.value = null
   Object.assign(form, defaultForm())
   formRef.value?.clearValidate()
 }
 
+function openCreateDialog() {
+  resetForm()
+  dialogVisible.value = true
+}
+
+function handleDialogClose() {
+  dialogVisible.value = false
+  resetForm()
+}
+
 async function loadPrices() {
   const response = await getPrices()
   prices.value = response.data
+}
+
+async function loadAssetCategoryOptions() {
+  const response = await getOptions('ASSET_CATEGORY')
+  assetCategoryOptions.value = response.data
 }
 
 async function submitPrice() {
@@ -123,11 +158,13 @@ async function submitPrice() {
     await createPrice(form)
     ElMessage.success('价格项已创建')
   }
+  dialogVisible.value = false
   resetForm()
   await loadPrices()
 }
 
 function fillPrice(record: PriceRecord) {
+  dialogVisible.value = true
   editingId.value = record.id
   form.assetCategory = record.assetCategory
   form.assetName = record.assetName
@@ -151,7 +188,7 @@ async function removePrice(id: number) {
 }
 
 onMounted(() => {
-  loadPrices().catch(() => {
+  Promise.all([loadPrices(), loadAssetCategoryOptions()]).catch(() => {
     ElMessage.error('价格列表加载失败')
   })
 })

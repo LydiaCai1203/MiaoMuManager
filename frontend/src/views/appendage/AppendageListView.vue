@@ -1,8 +1,53 @@
 <template>
   <div class="project-page">
     <div class="page-card">
+      <div class="section-header list-header-main">
+        <h2>附属物评估列表</h2>
+        <div class="section-actions compact-actions">
+          <el-button type="primary" @click="openCreateDialog">新建评估单</el-button>
+        </div>
+      </div>
+      <div class="list-toolbar">
+        <div class="list-filters">
+          <el-input v-model="keyword" placeholder="搜索评估单编号/租户/位置" clearable style="width: 260px" />
+        </div>
+        <el-button text @click="loadEvaluations">刷新</el-button>
+      </div>
+      <el-table :data="filteredEvaluations">
+        <el-table-column prop="evaluationNo" label="评估单编号" min-width="180" />
+        <el-table-column prop="tenantName" label="租户" min-width="140" />
+        <el-table-column prop="locationText" label="位置" min-width="160" />
+        <el-table-column prop="totalAmount" label="合计金额" width="120" />
+        <el-table-column label="状态" width="120">
+          <template #default="scope">
+            <span :class="['status-chip', scope.row.status === 'SUBMITTED' ? 'status-submitted' : 'status-draft']">
+              {{ getEvaluationStatusLabel(scope.row.status) }}
+            </span>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="180">
+          <template #default="scope">
+            <el-button text @click="fillEvaluation(scope.row)">编辑</el-button>
+            <el-button text type="danger" @click="removeEvaluation(scope.row.id)">删除</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+    </div>
+
+    <el-dialog v-model="dialogVisible" :title="editingId ? '编辑附属物评估单' : '新建附属物评估单'" width="1080px" top="4vh" destroy-on-close>
+      <div class="record-page-hero">
+        <div>
+          <div class="record-page-kicker">评估业务</div>
+          <h2>{{ editingId ? '编辑附属物评估单' : '新建附属物评估单' }}</h2>
+          <div class="muted-text">用于录入附属物明细、自动汇总评估值，并维护单据状态。</div>
+        </div>
+        <div class="record-page-summary">
+          <span class="summary-label">当前合计</span>
+          <strong>{{ totalAmount.toFixed(2) }}</strong>
+        </div>
+      </div>
       <div class="section-header">
-        <h2>{{ editingId ? '编辑附属物评估单' : '新建附属物评估单' }}</h2>
+        <h2>评估单信息</h2>
       </div>
       <el-form :model="form" label-position="top" class="grid-form">
         <el-form-item label="所属项目">
@@ -26,8 +71,7 @@
         </el-form-item>
         <el-form-item label="状态">
           <el-select v-model="form.status">
-            <el-option label="草稿" value="DRAFT" />
-            <el-option label="已提交" value="SUBMITTED" />
+            <el-option v-for="item in evaluationStatusOptions" :key="item.optionValue" :label="item.optionLabel" :value="item.optionValue" />
           </el-select>
         </el-form-item>
       </el-form>
@@ -69,45 +113,26 @@
         </el-table-column>
       </el-table>
 
-      <div class="section-actions">
+      <div class="section-actions section-toolbar">
         <el-button @click="addItem">新增明细</el-button>
         <div class="summary-text">合计：{{ totalAmount.toFixed(2) }}</div>
       </div>
 
-      <div class="section-actions">
-        <el-button type="primary" @click="submitEvaluation">保存附属物评估单</el-button>
-        <el-button @click="resetForm">重置</el-button>
-      </div>
-    </div>
-
-    <div class="page-card">
-      <div class="section-header">
-        <h2>附属物评估列表</h2>
-        <div class="section-actions">
-          <el-input v-model="keyword" placeholder="搜索评估单编号/租户/位置" clearable style="width: 260px" />
-          <el-button text @click="loadEvaluations">刷新</el-button>
+      <template #footer>
+        <div class="dialog-footer">
+          <el-button @click="handleDialogClose">取消</el-button>
+          <el-button @click="resetForm">重置</el-button>
+          <el-button type="primary" @click="submitEvaluation">{{ editingId ? '保存评估单' : '新建评估单' }}</el-button>
         </div>
-      </div>
-      <el-table :data="filteredEvaluations">
-        <el-table-column prop="evaluationNo" label="评估单编号" min-width="180" />
-        <el-table-column prop="tenantName" label="租户" min-width="140" />
-        <el-table-column prop="locationText" label="位置" min-width="160" />
-        <el-table-column prop="totalAmount" label="合计金额" width="120" />
-        <el-table-column prop="status" label="状态" width="120" />
-        <el-table-column label="操作" width="180">
-          <template #default="scope">
-            <el-button text @click="fillEvaluation(scope.row)">编辑</el-button>
-            <el-button text type="danger" @click="removeEvaluation(scope.row.id)">删除</el-button>
-          </template>
-        </el-table-column>
-      </el-table>
-    </div>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { getOptions, type OptionItemRecord } from '../../api/options'
 import { getProjects, type ProjectParty, type ProjectRecord } from '../../api/project'
 import { createAppendageEvaluation, deleteAppendageEvaluation, getAppendageEvaluations, updateAppendageEvaluation } from '../../api/appendage'
 
@@ -130,6 +155,8 @@ const projects = ref<ProjectRecord[]>([])
 const evaluations = ref<any[]>([])
 const editingId = ref<number | null>(null)
 const keyword = ref('')
+const dialogVisible = ref(false)
+const evaluationStatusOptions = ref<OptionItemRecord[]>([])
 
 const defaultItem = (): AppendageFormItem => ({
   assetType: 'STRUCTURE',
@@ -179,10 +206,24 @@ const filteredEvaluations = computed(() => {
   })
 })
 
+function getEvaluationStatusLabel(value: string) {
+  return evaluationStatusOptions.value.find((item) => item.optionValue === value)?.optionLabel ?? value
+}
+
 function resetForm() {
   editingId.value = null
   Object.assign(form, defaultForm())
   handleProjectChange()
+}
+
+function openCreateDialog() {
+  resetForm()
+  dialogVisible.value = true
+}
+
+function handleDialogClose() {
+  dialogVisible.value = false
+  resetForm()
 }
 
 function recalculate(item: AppendageFormItem) {
@@ -228,6 +269,11 @@ async function loadEvaluations() {
   evaluations.value = response.data
 }
 
+async function loadEvaluationStatusOptions() {
+  const response = await getOptions('EVALUATION_STATUS')
+  evaluationStatusOptions.value = response.data
+}
+
 async function submitEvaluation() {
   if (!form.projectId || !form.partyId) {
     ElMessage.warning('请选择所属项目和被评估对象')
@@ -265,11 +311,13 @@ async function submitEvaluation() {
     await createAppendageEvaluation(payload)
     ElMessage.success('附属物评估单已保存')
   }
+  dialogVisible.value = false
   resetForm()
   await loadEvaluations()
 }
 
 function fillEvaluation(record: any) {
+  dialogVisible.value = true
   editingId.value = record.id
   form.projectId = record.projectId
   form.partyId = record.partyId
@@ -309,8 +357,7 @@ async function removeEvaluation(id: number) {
 
 onMounted(async () => {
   try {
-    await loadProjects()
-    await loadEvaluations()
+    await Promise.all([loadProjects(), loadEvaluations(), loadEvaluationStatusOptions()])
   } catch {
     ElMessage.error('附属物评估页面初始化失败')
   }

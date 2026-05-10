@@ -1,9 +1,44 @@
 <template>
   <div class="project-page">
     <div class="page-card">
-      <div class="section-header">
-        <h2>{{ editingProjectId ? '编辑项目' : '新建项目' }}</h2>
+      <div class="section-header list-header-main">
+        <h2>项目列表</h2>
+        <div class="section-actions compact-actions">
+          <el-button type="primary" @click="openCreateDialog">新建项目</el-button>
+        </div>
       </div>
+      <div class="list-toolbar">
+        <div class="list-filters">
+          <el-input v-model="projectKeyword" placeholder="搜索项目编号/名称" clearable style="width: 240px" />
+        </div>
+        <el-button text @click="loadProjects">刷新</el-button>
+      </div>
+      <el-table :data="filteredProjects" row-key="id">
+        <el-table-column prop="projectCode" label="项目编号" min-width="160" />
+        <el-table-column prop="projectName" label="项目名称" min-width="220" />
+        <el-table-column label="项目类型" min-width="140">
+          <template #default="scope">
+            {{ getProjectTypeLabel(scope.row.projectType) }}
+          </template>
+        </el-table-column>
+        <el-table-column prop="regionName" label="区域" min-width="140" />
+        <el-table-column prop="status" label="状态" min-width="120" />
+        <el-table-column label="对象数" min-width="100">
+          <template #default="scope">
+            {{ scope.row.parties.length }}
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="240">
+          <template #default="scope">
+            <el-button text type="primary" @click="viewProject(scope.row.id)">详情</el-button>
+            <el-button text @click="fillProject(scope.row)">编辑</el-button>
+            <el-button text type="danger" @click="removeProject(scope.row.id)">删除</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+    </div>
+
+    <el-dialog v-model="dialogVisible" :title="editingProjectId ? '编辑项目' : '新建项目'" width="720px" destroy-on-close>
       <el-form ref="projectFormRef" :model="projectForm" :rules="projectRules" label-position="top" class="grid-form">
         <el-form-item label="项目编号" prop="projectCode">
           <el-input v-model="projectForm.projectCode" />
@@ -12,7 +47,9 @@
           <el-input v-model="projectForm.projectName" />
         </el-form-item>
         <el-form-item label="项目类型" prop="projectType">
-          <el-input v-model="projectForm.projectType" />
+          <el-select v-model="projectForm.projectType">
+            <el-option v-for="item in projectTypeOptions" :key="item.optionValue" :label="item.optionLabel" :value="item.optionValue" />
+          </el-select>
         </el-form-item>
         <el-form-item label="委托方" prop="entrustingParty">
           <el-input v-model="projectForm.entrustingParty" />
@@ -28,90 +65,42 @@
           </el-select>
         </el-form-item>
       </el-form>
-      <div class="section-actions">
-        <el-button type="primary" @click="submitProject">{{ editingProjectId ? '保存项目' : '创建项目' }}</el-button>
-        <el-button @click="resetProjectForm">重置</el-button>
-      </div>
-    </div>
-
-    <div class="page-card">
-      <div class="section-header">
-        <h2>项目列表</h2>
-        <div class="section-actions">
-          <el-input v-model="projectKeyword" placeholder="搜索项目编号/名称" clearable style="width: 240px" />
-          <el-button text @click="loadProjects">刷新</el-button>
+      <template #footer>
+        <div class="dialog-footer">
+          <el-button @click="handleDialogClose">取消</el-button>
+          <el-button @click="resetProjectForm">重置</el-button>
+          <el-button type="primary" @click="submitProject">{{ editingProjectId ? '保存项目' : '创建项目' }}</el-button>
         </div>
-      </div>
-      <el-table :data="filteredProjects" row-key="id">
-        <el-table-column prop="projectCode" label="项目编号" min-width="160" />
-        <el-table-column prop="projectName" label="项目名称" min-width="220" />
-        <el-table-column prop="projectType" label="项目类型" min-width="140" />
-        <el-table-column prop="regionName" label="区域" min-width="140" />
-        <el-table-column prop="status" label="状态" min-width="120" />
-        <el-table-column label="对象数" min-width="100">
-          <template #default="scope">
-            {{ scope.row.parties.length }}
-          </template>
-        </el-table-column>
-        <el-table-column label="操作" width="180">
-          <template #default="scope">
-            <el-button text @click="fillProject(scope.row)">编辑</el-button>
-            <el-button text type="danger" @click="removeProject(scope.row.id)">删除</el-button>
-          </template>
-        </el-table-column>
-      </el-table>
-    </div>
+      </template>
+    </el-dialog>
 
-    <div class="page-card">
-      <div class="section-header">
-        <h2>新增被评估对象</h2>
-      </div>
-      <el-form ref="partyFormRef" :model="partyForm" :rules="partyRules" label-position="top" class="grid-form">
-        <el-form-item label="所属项目" prop="projectId">
-          <el-select v-model="partyForm.projectId">
-            <el-option v-for="project in projects" :key="project.id" :label="project.projectName" :value="project.id" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="对象类型" prop="partyType">
-          <el-select v-model="partyForm.partyType">
-            <el-option label="个人" value="PERSON" />
-            <el-option label="单位" value="ORGANIZATION" />
-            <el-option label="租户" value="TENANT" />
-            <el-option label="村组" value="VILLAGE_GROUP" />
-            <el-option label="其他" value="OTHER" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="对象名称" prop="partyName">
-          <el-input v-model="partyForm.partyName" />
-        </el-form-item>
-        <el-form-item label="村组">
-          <el-input v-model="partyForm.villageGroup" />
-        </el-form-item>
-        <el-form-item label="位置">
-          <el-input v-model="partyForm.locationText" />
-        </el-form-item>
-        <el-form-item label="租户名称">
-          <el-input v-model="partyForm.tenantName" />
-        </el-form-item>
-      </el-form>
-      <el-button type="primary" @click="submitParty">新增对象</el-button>
-    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { createProject, createProjectParty, deleteProject, getProjects, updateProject, type ProjectRecord } from '../../api/project'
+import {
+  createProject,
+  deleteProject,
+  getProjects,
+  updateProject,
+  type ProjectPayload,
+  type ProjectRecord,
+} from '../../api/project'
+import { getOptions, type OptionItemRecord } from '../../api/options'
 
+const router = useRouter()
 const projects = ref<ProjectRecord[]>([])
 const editingProjectId = ref<number | null>(null)
 const projectKeyword = ref('')
 const projectFormRef = ref<FormInstance>()
-const partyFormRef = ref<FormInstance>()
+const dialogVisible = ref(false)
+const projectTypeOptions = ref<OptionItemRecord[]>([])
 
-const defaultProjectForm = () => ({
+const defaultProjectForm = (): ProjectPayload => ({
   projectCode: 'PRJ20260510002',
   projectName: '新建资产评估项目',
   projectType: 'LAND_ACQUISITION',
@@ -125,29 +114,13 @@ const defaultProjectForm = () => ({
 
 const projectForm = reactive(defaultProjectForm())
 
-const partyForm = reactive({
-  projectId: 1,
-  partyType: 'PERSON',
-  partyName: '新增对象',
-  villageGroup: '',
-  locationText: '',
-  tenantName: '',
-  remark: '',
-})
-
 const projectRules: FormRules = {
   projectCode: [{ required: true, message: '请输入项目编号', trigger: 'blur' }],
   projectName: [{ required: true, message: '请输入项目名称', trigger: 'blur' }],
-  projectType: [{ required: true, message: '请输入项目类型', trigger: 'blur' }],
+  projectType: [{ required: true, message: '请选择项目类型', trigger: 'change' }],
   entrustingParty: [{ required: true, message: '请输入委托方', trigger: 'blur' }],
   regionName: [{ required: true, message: '请输入所属区域', trigger: 'blur' }],
   status: [{ required: true, message: '请选择状态', trigger: 'change' }],
-}
-
-const partyRules: FormRules = {
-  projectId: [{ required: true, message: '请选择所属项目', trigger: 'change' }],
-  partyType: [{ required: true, message: '请选择对象类型', trigger: 'change' }],
-  partyName: [{ required: true, message: '请输入对象名称', trigger: 'blur' }],
 }
 
 const filteredProjects = computed(() => {
@@ -162,18 +135,34 @@ const filteredProjects = computed(() => {
   })
 })
 
+function getProjectTypeLabel(value: string) {
+  return projectTypeOptions.value.find((item) => item.optionValue === value)?.optionLabel ?? value
+}
+
 function resetProjectForm() {
   editingProjectId.value = null
   Object.assign(projectForm, defaultProjectForm())
   projectFormRef.value?.clearValidate()
 }
 
+function openCreateDialog() {
+  resetProjectForm()
+  dialogVisible.value = true
+}
+
+function handleDialogClose() {
+  dialogVisible.value = false
+  resetProjectForm()
+}
+
 async function loadProjects() {
   const response = await getProjects()
   projects.value = response.data
-  if (projects.value.length > 0 && !projects.value.some((item) => item.id === partyForm.projectId)) {
-    partyForm.projectId = projects.value[0].id
-  }
+}
+
+async function loadProjectTypeOptions() {
+  const response = await getOptions('PROJECT_TYPE')
+  projectTypeOptions.value = response.data
 }
 
 async function submitProject() {
@@ -188,11 +177,13 @@ async function submitProject() {
     await createProject(projectForm)
     ElMessage.success('项目已创建')
   }
+  dialogVisible.value = false
   resetProjectForm()
   await loadProjects()
 }
 
 function fillProject(project: ProjectRecord) {
+  dialogVisible.value = true
   editingProjectId.value = project.id
   projectForm.projectCode = project.projectCode
   projectForm.projectName = project.projectName
@@ -203,6 +194,10 @@ function fillProject(project: ProjectRecord) {
   projectForm.surveyDate = project.surveyDate ?? ''
   projectForm.status = project.status
   projectForm.remark = project.remark ?? ''
+}
+
+function viewProject(id: number) {
+  router.push(`/projects/${id}`)
 }
 
 async function removeProject(id: number) {
@@ -216,26 +211,8 @@ async function removeProject(id: number) {
   await loadProjects()
 }
 
-async function submitParty() {
-  const valid = await partyFormRef.value?.validate().catch(() => false)
-  if (!valid) {
-    return
-  }
-  await createProjectParty(partyForm.projectId, {
-    partyType: partyForm.partyType,
-    partyName: partyForm.partyName,
-    villageGroup: partyForm.villageGroup,
-    locationText: partyForm.locationText,
-    tenantName: partyForm.tenantName,
-    remark: partyForm.remark,
-  })
-  ElMessage.success('对象已新增')
-  partyFormRef.value?.resetFields()
-  await loadProjects()
-}
-
 onMounted(() => {
-  loadProjects().catch(() => {
+  Promise.all([loadProjects(), loadProjectTypeOptions()]).catch(() => {
     ElMessage.error('项目加载失败')
   })
 })

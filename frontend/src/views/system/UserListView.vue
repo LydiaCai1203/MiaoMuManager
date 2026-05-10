@@ -1,9 +1,39 @@
 <template>
   <div class="project-page">
     <div class="page-card">
-      <div class="section-header">
-        <h2>{{ editingId ? '编辑用户' : '新增用户' }}</h2>
+      <div class="section-header list-header-main">
+        <h2>用户列表</h2>
+        <div class="section-actions compact-actions">
+          <el-button type="primary" @click="openCreateDialog">新建用户</el-button>
+        </div>
       </div>
+      <div class="list-toolbar">
+        <div class="list-filters">
+          <el-input v-model="keyword" placeholder="搜索用户名/姓名/手机号" clearable style="width: 240px" />
+        </div>
+        <el-button text @click="loadUsers">刷新</el-button>
+      </div>
+      <el-table :data="filteredUsers">
+        <el-table-column prop="username" label="用户名" min-width="160" />
+        <el-table-column prop="realName" label="姓名" min-width="140" />
+        <el-table-column prop="phone" label="手机号" min-width="160" />
+        <el-table-column label="状态" width="120">
+          <template #default="scope">
+            <span :class="['status-chip', scope.row.status === 'ENABLED' ? 'status-submitted' : 'status-draft']">
+              {{ getUserStatusLabel(scope.row.status) }}
+            </span>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="120">
+          <template #default="scope">
+            <el-button text @click="fillUser(scope.row)">编辑</el-button>
+            <el-button text type="danger" @click="removeUser(scope.row.id)">删除</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+    </div>
+
+    <el-dialog v-model="dialogVisible" :title="editingId ? '编辑用户' : '新增用户'" width="680px" destroy-on-close>
       <el-form ref="formRef" :model="form" :rules="rules" label-position="top" class="grid-form">
         <el-form-item label="用户名" prop="username">
           <el-input v-model="form.username" />
@@ -16,38 +46,18 @@
         </el-form-item>
         <el-form-item label="状态" prop="status">
           <el-select v-model="form.status">
-            <el-option label="启用" value="ENABLED" />
-            <el-option label="禁用" value="DISABLED" />
+            <el-option v-for="item in userStatusOptions" :key="item.optionValue" :label="item.optionLabel" :value="item.optionValue" />
           </el-select>
         </el-form-item>
       </el-form>
-      <div class="section-actions">
-        <el-button type="primary" @click="submitUser">{{ editingId ? '保存用户' : '创建用户' }}</el-button>
-        <el-button @click="resetForm">重置</el-button>
-      </div>
-    </div>
-
-    <div class="page-card">
-      <div class="section-header">
-        <h2>用户列表</h2>
-        <div class="section-actions">
-          <el-input v-model="keyword" placeholder="搜索用户名/姓名/手机号" clearable style="width: 240px" />
-          <el-button text @click="loadUsers">刷新</el-button>
+      <template #footer>
+        <div class="dialog-footer">
+          <el-button @click="handleDialogClose">取消</el-button>
+          <el-button @click="resetForm">重置</el-button>
+          <el-button type="primary" @click="submitUser">{{ editingId ? '保存用户' : '新增用户' }}</el-button>
         </div>
-      </div>
-      <el-table :data="filteredUsers">
-        <el-table-column prop="username" label="用户名" min-width="160" />
-        <el-table-column prop="realName" label="姓名" min-width="140" />
-        <el-table-column prop="phone" label="手机号" min-width="160" />
-        <el-table-column prop="status" label="状态" width="120" />
-        <el-table-column label="操作" width="120">
-          <template #default="scope">
-            <el-button text @click="fillUser(scope.row)">编辑</el-button>
-            <el-button text type="danger" @click="removeUser(scope.row.id)">删除</el-button>
-          </template>
-        </el-table-column>
-      </el-table>
-    </div>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -55,12 +65,15 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { getOptions, type OptionItemRecord } from '../../api/options'
 import { createUser, deleteUser, getUsers, updateUser, type UserRecord } from '../../api/auth'
 
 const users = ref<UserRecord[]>([])
 const editingId = ref<number | null>(null)
 const keyword = ref('')
 const formRef = ref<FormInstance>()
+const dialogVisible = ref(false)
+const userStatusOptions = ref<OptionItemRecord[]>([])
 
 const defaultForm = () => ({
   username: 'user_demo',
@@ -93,15 +106,34 @@ const filteredUsers = computed(() => {
   })
 })
 
+function getUserStatusLabel(value: string) {
+  return userStatusOptions.value.find((item) => item.optionValue === value)?.optionLabel ?? value
+}
+
 function resetForm() {
   editingId.value = null
   Object.assign(form, defaultForm())
   formRef.value?.clearValidate()
 }
 
+function openCreateDialog() {
+  resetForm()
+  dialogVisible.value = true
+}
+
+function handleDialogClose() {
+  dialogVisible.value = false
+  resetForm()
+}
+
 async function loadUsers() {
   const response = await getUsers()
   users.value = response.data
+}
+
+async function loadUserStatusOptions() {
+  const response = await getOptions('USER_STATUS')
+  userStatusOptions.value = response.data
 }
 
 async function submitUser() {
@@ -116,11 +148,13 @@ async function submitUser() {
     await createUser(form)
     ElMessage.success('用户已创建')
   }
+  dialogVisible.value = false
   resetForm()
   await loadUsers()
 }
 
 function fillUser(record: UserRecord) {
+  dialogVisible.value = true
   editingId.value = record.id
   form.username = record.username
   form.realName = record.realName
@@ -140,7 +174,7 @@ async function removeUser(id: number) {
 }
 
 onMounted(() => {
-  loadUsers().catch(() => {
+  Promise.all([loadUsers(), loadUserStatusOptions()]).catch(() => {
     ElMessage.error('用户列表加载失败')
   })
 })

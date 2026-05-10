@@ -73,3 +73,11 @@ export function createProjectParty(projectId: number, payload: ProjectPartyPaylo
 export function getProjectParties(projectId: number) {
   return request.get(`/projects/${projectId}/parties`)
 }
+
+export function updateProjectParty(projectId: number, partyId: number, payload: ProjectPartyPayload) {
+  return request.put(`/projects/${projectId}/parties/${partyId}`, payload)
+}
+
+export function deleteProjectParty(projectId: number, partyId: number) {
+  return request.delete(`/projects/${projectId}/parties/${partyId}`)
+}

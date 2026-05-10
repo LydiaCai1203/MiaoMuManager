@@ -17,3 +17,9 @@ export function createProjectParty(projectId, payload) {
 export function getProjectParties(projectId) {
     return request.get(`/projects/${projectId}/parties`);
 }
+export function updateProjectParty(projectId, partyId, payload) {
+    return request.put(`/projects/${projectId}/parties/${partyId}`, payload);
+}
+export function deleteProjectParty(projectId, partyId) {
+    return request.delete(`/projects/${projectId}/parties/${partyId}`);
+}
