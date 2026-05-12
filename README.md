@@ -199,6 +199,75 @@ src/main/java/com/evaluation/
 └── security/        # 安全模块
 ```
 
+## Docker 部署
+
+### 前置要求
+
+- Docker 20.10+
+- Docker Compose v2+
+
+### 一键启动
+
+```bash
+docker compose up -d
+```
+
+该命令会自动构建前后端镜像并启动以下服务：
+
+| 服务 | 端口 | 说明 |
+|------|------|------|
+| frontend | 80 | Nginx 托管前端静态资源，反向代理 /api 到后端 |
+| backend | 8080 | Spring Boot 后端服务 |
+| postgres | 5432 | PostgreSQL 数据库 |
+| redis | 6379 | Redis 缓存 |
+
+启动完成后访问 http://localhost 即可使用系统。
+
+### 仅重建某个服务
+
+```bash
+# 重建并重启后端
+docker compose up -d --build backend
+
+# 重建并重启前端
+docker compose up -d --build frontend
+```
+
+### 查看日志
+
+```bash
+# 查看所有服务日志
+docker compose logs -f
+
+# 查看后端日志
+docker compose logs -f backend
+```
+
+### 停止服务
+
+```bash
+docker compose down
+```
+
+### 停止并清除数据卷
+
+```bash
+docker compose down -v
+```
+
+### 环境变量覆盖
+
+后端支持通过环境变量覆盖 application.yml 中的配置：
+
+| 环境变量 | 默认值 | 说明 |
+|----------|--------|------|
+| SPRING_DATASOURCE_URL | jdbc:postgresql://postgres:5432/asset_evaluation | 数据库连接地址 |
+| SPRING_DATASOURCE_USERNAME | asset_app | 数据库用户名 |
+| SPRING_DATASOURCE_PASSWORD | asset_app_123 | 数据库密码 |
+| SPRING_DATA_REDIS_HOST | redis | Redis 地址 |
+
+生产环境建议通过 `.env` 文件或 Docker secrets 管理敏感配置。
+
 ## License
 
 MIT License
