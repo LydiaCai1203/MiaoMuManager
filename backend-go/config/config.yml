@@ -1,0 +1,13 @@
+server:
+  port: 8080
+
+database:
+  host: localhost
+  port: 5432
+  user: asset_app
+  password: asset_app_123
+  dbname: asset_evaluation
+
+redis:
+  host: localhost
+  port: 6379

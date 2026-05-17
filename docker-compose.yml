@@ -26,14 +26,16 @@ services:
       retries: 10
 
   backend:
-    build: ./backend
+    build: ./backend-go
     ports:
       - "8080:8080"
     environment:
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/asset_evaluation
-      SPRING_DATASOURCE_USERNAME: asset_app
-      SPRING_DATASOURCE_PASSWORD: asset_app_123
-      SPRING_DATA_REDIS_HOST: redis
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_USER: asset_app
+      DB_PASSWORD: asset_app_123
+      DB_NAME: asset_evaluation
+      REDIS_HOST: redis
     depends_on:
       postgres:
         condition: service_healthy
