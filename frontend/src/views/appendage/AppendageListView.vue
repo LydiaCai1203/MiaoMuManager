@@ -79,7 +79,7 @@
       <el-table :data="form.items" class="section-table">
         <el-table-column label="分类" width="180">
           <template #default="scope">
-            <el-select v-model="scope.row.assetType">
+            <el-select v-model="scope.row.assetType" @change="handleAssetTypeChange(scope.row)">
               <el-option label="构筑物" value="STRUCTURE" />
               <el-option label="设备搬迁" value="EQUIPMENT_MOVE" />
               <el-option label="苗木移植" value="SEEDLING_MOVE" />
@@ -88,12 +88,40 @@
         </el-table-column>
         <el-table-column label="名称" min-width="180">
           <template #default="scope">
-            <el-input v-model="scope.row.itemName" />
+            <el-select
+              v-model="scope.row.itemName"
+              filterable
+              allow-create
+              default-first-option
+              placeholder="选择或输入名称"
+              @change="handleItemNameChange(scope.row)"
+            >
+              <el-option
+                v-for="name in getNameOptions(scope.row.assetType)"
+                :key="name"
+                :label="name"
+                :value="name"
+              />
+            </el-select>
           </template>
         </el-table-column>
         <el-table-column label="规格" min-width="180">
           <template #default="scope">
-            <el-input v-model="scope.row.specification" />
+            <el-select
+              v-model="scope.row.specification"
+              filterable
+              allow-create
+              default-first-option
+              placeholder="选择或输入规格"
+              @change="handleItemSpecChange(scope.row)"
+            >
+              <el-option
+                v-for="spec in getSpecOptions(scope.row.assetType, scope.row.itemName)"
+                :key="spec"
+                :label="spec"
+                :value="spec"
+              />
+            </el-select>
           </template>
         </el-table-column>
         <el-table-column label="数量" width="140">
@@ -135,6 +163,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { getOptions, type OptionItemRecord } from '../../api/options'
 import { getProjects, type ProjectParty, type ProjectRecord } from '../../api/project'
 import { createAppendageEvaluation, deleteAppendageEvaluation, getAppendageEvaluations, updateAppendageEvaluation } from '../../api/appendage'
+import { lookupPrices, type PriceRecord } from '../../api/price'
 
 interface AppendageFormItem {
   assetType: string
@@ -151,26 +180,90 @@ interface AppendageFormItem {
   evaluationAmount: number
 }
 
+const CATEGORY_MAP: Record<string, string> = {
+  STRUCTURE: 'APPENDAGE_STRUCTURE',
+  EQUIPMENT_MOVE: 'APPENDAGE_EQUIPMENT_MOVE',
+  SEEDLING_MOVE: 'APPENDAGE_SEEDLING_MOVE',
+}
+
 const projects = ref<ProjectRecord[]>([])
 const evaluations = ref<any[]>([])
 const editingId = ref<number | null>(null)
 const keyword = ref('')
 const dialogVisible = ref(false)
 const evaluationStatusOptions = ref<OptionItemRecord[]>([])
+const appendagePrices = ref<Record<string, PriceRecord[]>>({
+  APPENDAGE_STRUCTURE: [],
+  APPENDAGE_EQUIPMENT_MOVE: [],
+  APPENDAGE_SEEDLING_MOVE: [],
+})
+
+function getPricesForType(assetType: string): PriceRecord[] {
+  const category = CATEGORY_MAP[assetType]
+  return category ? (appendagePrices.value[category] || []) : []
+}
+
+function getNameOptions(assetType: string) {
+  const names = new Set(getPricesForType(assetType).map((p) => p.assetName))
+  return Array.from(names)
+}
+
+function getSpecOptions(assetType: string, itemName: string) {
+  return getPricesForType(assetType)
+    .filter((p) => p.assetName === itemName && p.specification)
+    .map((p) => p.specification!)
+}
+
+function findPrice(assetType: string, name: string, spec: string) {
+  return getPricesForType(assetType).find((p) => p.assetName === name && p.specification === spec)
+}
+
+function handleAssetTypeChange(item: AppendageFormItem) {
+  item.itemName = ''
+  item.specification = ''
+  item.unit = '项'
+  item.evaluationUnitPrice = 0
+  recalculate(item)
+}
+
+function handleItemNameChange(item: AppendageFormItem) {
+  const specs = getSpecOptions(item.assetType, item.itemName)
+  if (specs.length === 1) {
+    item.specification = specs[0]
+    applyPrice(item)
+  } else {
+    item.specification = ''
+    item.evaluationUnitPrice = 0
+    recalculate(item)
+  }
+}
+
+function handleItemSpecChange(item: AppendageFormItem) {
+  applyPrice(item)
+}
+
+function applyPrice(item: AppendageFormItem) {
+  const price = findPrice(item.assetType, item.itemName, item.specification)
+  if (price) {
+    item.evaluationUnitPrice = Number(price.basePrice)
+    if (price.unit) item.unit = price.unit
+    recalculate(item)
+  }
+}
 
 const defaultItem = (): AppendageFormItem => ({
   assetType: 'STRUCTURE',
   assetCode: '',
   lineNo: 1,
-  itemName: '门墩',
-  specification: '0.4*0.4高3米*2个',
+  itemName: '',
+  specification: '',
   unit: '项',
-  quantity: 1,
-  replacementUnitPrice: 680,
-  replacementAmount: 680,
-  noveltyRate: 0.7,
-  evaluationUnitPrice: 476,
-  evaluationAmount: 476,
+  quantity: 0,
+  replacementUnitPrice: 0,
+  replacementAmount: 0,
+  noveltyRate: 1,
+  evaluationUnitPrice: 0,
+  evaluationAmount: 0,
 })
 
 const defaultForm = () => ({
@@ -274,6 +367,19 @@ async function loadEvaluationStatusOptions() {
   evaluationStatusOptions.value = response.data
 }
 
+async function loadAppendagePrices() {
+  const [structure, equipment, seedling] = await Promise.all([
+    lookupPrices('APPENDAGE_STRUCTURE'),
+    lookupPrices('APPENDAGE_EQUIPMENT_MOVE'),
+    lookupPrices('APPENDAGE_SEEDLING_MOVE'),
+  ])
+  appendagePrices.value = {
+    APPENDAGE_STRUCTURE: structure.data,
+    APPENDAGE_EQUIPMENT_MOVE: equipment.data,
+    APPENDAGE_SEEDLING_MOVE: seedling.data,
+  }
+}
+
 async function submitEvaluation() {
   if (!form.projectId || !form.partyId) {
     ElMessage.warning('请选择所属项目和被评估对象')
@@ -361,5 +467,6 @@ onMounted(async () => {
   } catch {
     ElMessage.error('附属物评估页面初始化失败')
   }
+  loadAppendagePrices().catch(() => {})
 })
 </script>

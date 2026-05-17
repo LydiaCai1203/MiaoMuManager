@@ -145,6 +145,8 @@ CREATE TABLE IF NOT EXISTS house_evaluation (
   orientation_factor NUMERIC(18,4) NOT NULL DEFAULT 1,
   decoration_factor NUMERIC(18,4) NOT NULL DEFAULT 1,
   total_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+  suggested_unit_price NUMERIC(18,2),
+  price_adjusted SMALLINT NOT NULL DEFAULT 0,
   benchmark_date DATE,
   survey_date DATE,
   status VARCHAR(32) NOT NULL DEFAULT 'DRAFT',

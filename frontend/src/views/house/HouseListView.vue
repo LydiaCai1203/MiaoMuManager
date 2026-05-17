@@ -27,6 +27,7 @@
             <span :class="['status-chip', scope.row.status === 'SUBMITTED' ? 'status-submitted' : 'status-draft']">
               {{ getEvaluationStatusLabel(scope.row.status) }}
             </span>
+            <el-tag v-if="scope.row.priceAdjusted === 1" type="warning" size="small" style="margin-left: 4px">已修正</el-tag>
           </template>
         </el-table-column>
         <el-table-column label="操作" width="180">
@@ -71,7 +72,7 @@
           <el-input v-model="form.locationText" />
         </el-form-item>
         <el-form-item label="房屋用途">
-          <el-select v-model="form.usageType">
+          <el-select v-model="form.usageType" @change="handleUsageTypeChange">
             <el-option v-for="item in usageTypeOptions" :key="item.optionValue" :label="item.optionLabel" :value="item.optionValue" />
           </el-select>
         </el-form-item>
@@ -79,7 +80,13 @@
           <el-input-number v-model="form.buildingArea" :min="0" :precision="2" @change="recalculate" />
         </el-form-item>
         <el-form-item label="单价">
-          <el-input-number v-model="form.unitPrice" :min="0" :precision="2" @change="recalculate" />
+          <div style="display: flex; align-items: center; gap: 8px; width: 100%">
+            <el-input-number v-model="form.unitPrice" :min="0" :precision="2" @change="recalculate" style="flex: 1" />
+            <el-tag v-if="isPriceAdjusted" type="warning" size="small">已修正</el-tag>
+          </div>
+          <div v-if="suggestedPrice !== null" style="font-size: 12px; color: #909399; margin-top: 4px">
+            建议价格：{{ suggestedPrice }}
+          </div>
         </el-form-item>
         <el-form-item label="区域系数">
           <el-input-number v-model="form.regionFactor" :min="0" :precision="2" @change="recalculate" />
@@ -119,6 +126,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { getOptions, type OptionItemRecord } from '../../api/options'
 import { getProjects, type ProjectParty, type ProjectRecord } from '../../api/project'
 import { createHouseEvaluation, deleteHouseEvaluation, getHouseEvaluations, updateHouseEvaluation, type HouseEvaluationRecord } from '../../api/house'
+import { lookupPrices, type PriceRecord } from '../../api/price'
 
 const projects = ref<ProjectRecord[]>([])
 const evaluations = ref<HouseEvaluationRecord[]>([])
@@ -127,6 +135,23 @@ const keyword = ref('')
 const dialogVisible = ref(false)
 const usageTypeOptions = ref<OptionItemRecord[]>([])
 const evaluationStatusOptions = ref<OptionItemRecord[]>([])
+const housePrices = ref<PriceRecord[]>([])
+
+const suggestedPrice = computed(() => {
+  if (!form.usageType) return null
+  const price = housePrices.value.find((p) => p.assetName === form.usageType)
+  return price ? Number(price.basePrice) : null
+})
+
+const isPriceAdjusted = computed(() => {
+  return suggestedPrice.value !== null && form.unitPrice !== suggestedPrice.value
+})
+
+function handleUsageTypeChange() {
+  if (suggestedPrice.value !== null) {
+    form.unitPrice = suggestedPrice.value
+  }
+}
 
 const defaultForm = () => ({
   projectId: 1,
@@ -234,6 +259,11 @@ async function loadEvaluationStatusOptions() {
   evaluationStatusOptions.value = response.data
 }
 
+async function loadHousePrices() {
+  const response = await lookupPrices('HOUSE')
+  housePrices.value = response.data
+}
+
 async function submitEvaluation() {
   if (!form.projectId || !form.partyId) {
     ElMessage.warning('请选择所属项目和被评估对象')
@@ -317,5 +347,6 @@ onMounted(async () => {
   } catch {
     ElMessage.error('房屋评估页面初始化失败')
   }
+  loadHousePrices().catch(() => {})
 })
 </script>

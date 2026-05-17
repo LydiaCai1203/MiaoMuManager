@@ -84,12 +84,35 @@
         </el-table-column>
         <el-table-column label="苗木名称" min-width="180">
           <template #default="scope">
-            <el-input v-model="scope.row.seedlingName" />
+            <el-select
+              v-model="scope.row.seedlingName"
+              filterable
+              allow-create
+              default-first-option
+              placeholder="选择或输入名称"
+              @change="handleNameChange(scope.row)"
+            >
+              <el-option v-for="name in seedlingNameOptions" :key="name" :label="name" :value="name" />
+            </el-select>
           </template>
         </el-table-column>
         <el-table-column label="规格" min-width="180">
           <template #default="scope">
-            <el-input v-model="scope.row.specification" />
+            <el-select
+              v-model="scope.row.specification"
+              filterable
+              allow-create
+              default-first-option
+              placeholder="选择或输入规格"
+              @change="handleSpecChange(scope.row)"
+            >
+              <el-option
+                v-for="spec in getSpecOptions(scope.row.seedlingName)"
+                :key="spec"
+                :label="spec"
+                :value="spec"
+              />
+            </el-select>
           </template>
         </el-table-column>
         <el-table-column label="单位" width="120">
@@ -136,6 +159,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { getOptions, type OptionItemRecord } from '../../api/options'
 import { getProjects, type ProjectParty, type ProjectRecord } from '../../api/project'
 import { createSeedlingEvaluation, deleteSeedlingEvaluation, getSeedlingEvaluations, updateSeedlingEvaluation } from '../../api/seedling'
+import { lookupPrices, type PriceRecord } from '../../api/price'
 
 interface SeedlingFormItem {
   lineNo: number
@@ -153,15 +177,57 @@ const editingId = ref<number | null>(null)
 const keyword = ref('')
 const dialogVisible = ref(false)
 const evaluationStatusOptions = ref<OptionItemRecord[]>([])
+const seedlingPrices = ref<PriceRecord[]>([])
+
+const seedlingNameOptions = computed(() => {
+  const names = new Set(seedlingPrices.value.map((p) => p.assetName))
+  return Array.from(names)
+})
+
+function getSpecOptions(name: string) {
+  return seedlingPrices.value
+    .filter((p) => p.assetName === name && p.specification)
+    .map((p) => p.specification!)
+}
+
+function findPrice(name: string, spec: string) {
+  return seedlingPrices.value.find((p) => p.assetName === name && p.specification === spec)
+}
+
+function handleNameChange(item: SeedlingFormItem) {
+  const specs = getSpecOptions(item.seedlingName)
+  if (specs.length === 1) {
+    item.specification = specs[0]
+    applyPrice(item)
+  } else {
+    item.specification = ''
+    item.unitPrice = 0
+    item.unit = '株'
+    recalculate(item)
+  }
+}
+
+function handleSpecChange(item: SeedlingFormItem) {
+  applyPrice(item)
+}
+
+function applyPrice(item: SeedlingFormItem) {
+  const price = findPrice(item.seedlingName, item.specification)
+  if (price) {
+    item.unitPrice = Number(price.basePrice)
+    if (price.unit) item.unit = price.unit
+    recalculate(item)
+  }
+}
 
 const defaultItem = (): SeedlingFormItem => ({
   lineNo: 1,
-  seedlingName: '桂花',
-  specification: '胸径 8cm',
+  seedlingName: '',
+  specification: '',
   unit: '株',
-  quantity: 10,
-  unitPrice: 120,
-  amount: 1200,
+  quantity: 0,
+  unitPrice: 0,
+  amount: 0,
 })
 
 const defaultForm = () => ({
@@ -256,6 +322,11 @@ async function loadEvaluationStatusOptions() {
   evaluationStatusOptions.value = response.data
 }
 
+async function loadSeedlingPrices() {
+  const response = await lookupPrices('SEEDLING')
+  seedlingPrices.value = response.data
+}
+
 async function submitEvaluation() {
   if (!form.projectId || !form.partyId) {
     ElMessage.warning('请选择所属项目和被评估对象')
@@ -334,5 +405,6 @@ onMounted(async () => {
   } catch {
     ElMessage.error('苗木评估页面初始化失败')
   }
+  loadSeedlingPrices().catch(() => {})
 })
 </script>

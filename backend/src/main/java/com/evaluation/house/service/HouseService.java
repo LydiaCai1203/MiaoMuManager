@@ -1,90 +1,49 @@
 package com.evaluation.house.service;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.evaluation.house.entity.HouseEvaluationEntity;
+import com.evaluation.house.mapper.HouseEvaluationMapper;
 import com.evaluation.house.model.HouseEvaluationRequest;
 import com.evaluation.house.model.HouseEvaluationResponse;
+import com.evaluation.price.entity.PriceLibrary;
+import com.evaluation.price.mapper.PriceLibraryMapper;
+import com.evaluation.project.mapper.EvaluationPartyMapper;
+import com.evaluation.project.mapper.EvaluationProjectMapper;
 import java.math.BigDecimal;
-import java.sql.Date;
 import java.time.LocalDate;
 import java.util.List;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class HouseService {
 
-  private final JdbcTemplate jdbcTemplate;
+  private final HouseEvaluationMapper houseMapper;
+  private final PriceLibraryMapper priceMapper;
+  private final EvaluationProjectMapper projectMapper;
+  private final EvaluationPartyMapper partyMapper;
 
-  public HouseService(JdbcTemplate jdbcTemplate) {
-    this.jdbcTemplate = jdbcTemplate;
+  public HouseService(HouseEvaluationMapper houseMapper, PriceLibraryMapper priceMapper,
+                      EvaluationProjectMapper projectMapper, EvaluationPartyMapper partyMapper) {
+    this.houseMapper = houseMapper;
+    this.priceMapper = priceMapper;
+    this.projectMapper = projectMapper;
+    this.partyMapper = partyMapper;
   }
 
   public List<HouseEvaluationResponse> list() {
-    return jdbcTemplate.query(
-        """
-        SELECT id, project_id, party_id, evaluation_no, location_text, usage_type,
-               building_area, unit_price, region_factor, floor_factor, orientation_factor,
-               decoration_factor, total_amount, benchmark_date, survey_date, status, remark
-        FROM house_evaluation
-        WHERE deleted = 0
-        ORDER BY id DESC
-        """,
-        (rs, rowNum) -> new HouseEvaluationResponse(
-            rs.getLong("id"),
-            rs.getLong("project_id"),
-            rs.getLong("party_id"),
-            rs.getString("evaluation_no"),
-            rs.getString("location_text"),
-            rs.getString("usage_type"),
-            rs.getBigDecimal("building_area"),
-            rs.getBigDecimal("unit_price"),
-            rs.getBigDecimal("region_factor"),
-            rs.getBigDecimal("floor_factor"),
-            rs.getBigDecimal("orientation_factor"),
-            rs.getBigDecimal("decoration_factor"),
-            rs.getBigDecimal("total_amount"),
-            asString(rs.getDate("benchmark_date")),
-            asString(rs.getDate("survey_date")),
-            rs.getString("status"),
-            rs.getString("remark")
-        )
+    List<HouseEvaluationEntity> entities = houseMapper.selectList(
+        new LambdaQueryWrapper<HouseEvaluationEntity>().orderByDesc(HouseEvaluationEntity::getId)
     );
+    return entities.stream().map(this::toResponse).toList();
   }
 
   public HouseEvaluationResponse detail(Long id) {
-    List<HouseEvaluationResponse> results = jdbcTemplate.query(
-        """
-        SELECT id, project_id, party_id, evaluation_no, location_text, usage_type,
-               building_area, unit_price, region_factor, floor_factor, orientation_factor,
-               decoration_factor, total_amount, benchmark_date, survey_date, status, remark
-        FROM house_evaluation
-        WHERE id = ? AND deleted = 0
-        """,
-        (rs, rowNum) -> new HouseEvaluationResponse(
-            rs.getLong("id"),
-            rs.getLong("project_id"),
-            rs.getLong("party_id"),
-            rs.getString("evaluation_no"),
-            rs.getString("location_text"),
-            rs.getString("usage_type"),
-            rs.getBigDecimal("building_area"),
-            rs.getBigDecimal("unit_price"),
-            rs.getBigDecimal("region_factor"),
-            rs.getBigDecimal("floor_factor"),
-            rs.getBigDecimal("orientation_factor"),
-            rs.getBigDecimal("decoration_factor"),
-            rs.getBigDecimal("total_amount"),
-            asString(rs.getDate("benchmark_date")),
-            asString(rs.getDate("survey_date")),
-            rs.getString("status"),
-            rs.getString("remark")
-        ),
-        id
-    );
-    if (results.isEmpty()) {
+    HouseEvaluationEntity entity = houseMapper.selectById(id);
+    if (entity == null) {
       throw new IllegalArgumentException("房屋评估单不存在: " + id);
     }
-    return results.get(0);
+    return toResponse(entity);
   }
 
   @Transactional
@@ -92,37 +51,15 @@ public class HouseService {
     ensureProjectExists(request.projectId());
     ensurePartyExists(request.projectId(), request.partyId());
     BigDecimal totalAmount = calculateTotal(request);
-    Long id = jdbcTemplate.queryForObject(
-        """
-        INSERT INTO house_evaluation (
-          project_id, party_id, evaluation_no, location_text, usage_type, building_area,
-          unit_price, region_factor, floor_factor, orientation_factor, decoration_factor,
-          total_amount, benchmark_date, survey_date, status, remark
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        RETURNING id
-        """,
-        Long.class,
-        request.projectId(),
-        request.partyId(),
-        request.evaluationNo(),
-        request.locationText(),
-        request.usageType(),
-        request.buildingArea(),
-        request.unitPrice(),
-        request.regionFactor(),
-        request.floorFactor(),
-        request.orientationFactor(),
-        request.decorationFactor(),
-        totalAmount,
-        asDate(request.benchmarkDate()),
-        asDate(request.surveyDate()),
-        request.status(),
-        request.remark()
-    );
-    if (id == null) {
-      throw new IllegalArgumentException("房屋评估单创建失败");
-    }
-    return detail(id);
+    BigDecimal suggestedPrice = lookupSuggestedPrice(request.usageType());
+    int priceAdjusted = (suggestedPrice != null && request.unitPrice().compareTo(suggestedPrice) != 0) ? 1 : 0;
+
+    HouseEvaluationEntity entity = toEntity(request);
+    entity.setTotalAmount(totalAmount);
+    entity.setSuggestedUnitPrice(suggestedPrice);
+    entity.setPriceAdjusted(priceAdjusted);
+    houseMapper.insert(entity);
+    return detail(entity.getId());
   }
 
   @Transactional
@@ -131,40 +68,38 @@ public class HouseService {
     ensureProjectExists(request.projectId());
     ensurePartyExists(request.projectId(), request.partyId());
     BigDecimal totalAmount = calculateTotal(request);
-    jdbcTemplate.update(
-        """
-        UPDATE house_evaluation
-        SET project_id = ?, party_id = ?, evaluation_no = ?, location_text = ?, usage_type = ?,
-            building_area = ?, unit_price = ?, region_factor = ?, floor_factor = ?,
-            orientation_factor = ?, decoration_factor = ?, total_amount = ?, benchmark_date = ?,
-            survey_date = ?, status = ?, remark = ?, updated_at = CURRENT_TIMESTAMP
-        WHERE id = ? AND deleted = 0
-        """,
-        request.projectId(),
-        request.partyId(),
-        request.evaluationNo(),
-        request.locationText(),
-        request.usageType(),
-        request.buildingArea(),
-        request.unitPrice(),
-        request.regionFactor(),
-        request.floorFactor(),
-        request.orientationFactor(),
-        request.decorationFactor(),
-        totalAmount,
-        asDate(request.benchmarkDate()),
-        asDate(request.surveyDate()),
-        request.status(),
-        request.remark(),
-        id
-    );
+    BigDecimal suggestedPrice = lookupSuggestedPrice(request.usageType());
+    int priceAdjusted = (suggestedPrice != null && request.unitPrice().compareTo(suggestedPrice) != 0) ? 1 : 0;
+
+    HouseEvaluationEntity entity = toEntity(request);
+    entity.setId(id);
+    entity.setTotalAmount(totalAmount);
+    entity.setSuggestedUnitPrice(suggestedPrice);
+    entity.setPriceAdjusted(priceAdjusted);
+    houseMapper.updateById(entity);
     return detail(id);
   }
 
   @Transactional
   public void delete(Long id) {
     detail(id);
-    jdbcTemplate.update("UPDATE house_evaluation SET deleted = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?", id);
+    houseMapper.deleteById(id);
+  }
+
+  private BigDecimal lookupSuggestedPrice(String usageType) {
+    if (usageType == null || usageType.isBlank()) {
+      return null;
+    }
+    List<PriceLibrary> prices = priceMapper.selectList(
+        new LambdaQueryWrapper<PriceLibrary>()
+            .eq(PriceLibrary::getAssetCategory, "HOUSE")
+            .eq(PriceLibrary::getAssetName, usageType)
+            .and(w -> w.isNull(PriceLibrary::getEffectiveDate).or().le(PriceLibrary::getEffectiveDate, LocalDate.now()))
+            .and(w -> w.isNull(PriceLibrary::getExpiryDate).or().ge(PriceLibrary::getExpiryDate, LocalDate.now()))
+            .orderByDesc(PriceLibrary::getId)
+            .last("LIMIT 1")
+    );
+    return prices.isEmpty() ? null : prices.get(0).getBasePrice();
   }
 
   private BigDecimal calculateTotal(HouseEvaluationRequest request) {
@@ -177,36 +112,65 @@ public class HouseService {
   }
 
   private void ensureProjectExists(Long projectId) {
-    Integer count = jdbcTemplate.queryForObject(
-        "SELECT count(*) FROM evaluation_project WHERE id = ? AND deleted = 0",
-        Integer.class,
-        projectId
-    );
-    if (count == null || count == 0) {
+    if (projectMapper.selectById(projectId) == null) {
       throw new IllegalArgumentException("项目不存在: " + projectId);
     }
   }
 
   private void ensurePartyExists(Long projectId, Long partyId) {
-    Integer count = jdbcTemplate.queryForObject(
-        "SELECT count(*) FROM evaluation_party WHERE id = ? AND project_id = ? AND deleted = 0",
-        Integer.class,
-        partyId,
-        projectId
-    );
-    if (count == null || count == 0) {
+    if (partyMapper.selectById(partyId) == null) {
       throw new IllegalArgumentException("被评估对象不存在: " + partyId);
     }
   }
 
-  private Date asDate(String value) {
+  private HouseEvaluationEntity toEntity(HouseEvaluationRequest request) {
+    HouseEvaluationEntity entity = new HouseEvaluationEntity();
+    entity.setProjectId(request.projectId());
+    entity.setPartyId(request.partyId());
+    entity.setEvaluationNo(request.evaluationNo());
+    entity.setLocationText(request.locationText());
+    entity.setUsageType(request.usageType());
+    entity.setBuildingArea(request.buildingArea());
+    entity.setUnitPrice(request.unitPrice());
+    entity.setRegionFactor(request.regionFactor());
+    entity.setFloorFactor(request.floorFactor());
+    entity.setOrientationFactor(request.orientationFactor());
+    entity.setDecorationFactor(request.decorationFactor());
+    entity.setBenchmarkDate(parseDate(request.benchmarkDate()));
+    entity.setSurveyDate(parseDate(request.surveyDate()));
+    entity.setStatus(request.status());
+    entity.setRemark(request.remark());
+    return entity;
+  }
+
+  private HouseEvaluationResponse toResponse(HouseEvaluationEntity entity) {
+    return new HouseEvaluationResponse(
+        entity.getId(),
+        entity.getProjectId(),
+        entity.getPartyId(),
+        entity.getEvaluationNo(),
+        entity.getLocationText(),
+        entity.getUsageType(),
+        entity.getBuildingArea(),
+        entity.getUnitPrice(),
+        entity.getRegionFactor(),
+        entity.getFloorFactor(),
+        entity.getOrientationFactor(),
+        entity.getDecorationFactor(),
+        entity.getTotalAmount(),
+        entity.getSuggestedUnitPrice(),
+        entity.getPriceAdjusted(),
+        entity.getBenchmarkDate() == null ? null : entity.getBenchmarkDate().toString(),
+        entity.getSurveyDate() == null ? null : entity.getSurveyDate().toString(),
+        entity.getStatus(),
+        entity.getRemark()
+    );
+  }
+
+  private LocalDate parseDate(String value) {
     if (value == null || value.isBlank()) {
       return null;
     }
-    return Date.valueOf(LocalDate.parse(value));
-  }
-
-  private String asString(Date value) {
-    return value == null ? null : value.toLocalDate().toString();
+    return LocalDate.parse(value);
   }
 }

@@ -1,154 +1,102 @@
 package com.evaluation.price.service;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.evaluation.price.entity.PriceLibrary;
+import com.evaluation.price.mapper.PriceLibraryMapper;
 import com.evaluation.price.model.PriceRequest;
 import com.evaluation.price.model.PriceResponse;
-import java.sql.Date;
 import java.time.LocalDate;
 import java.util.List;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class PriceService {
 
-  private final JdbcTemplate jdbcTemplate;
+  private final PriceLibraryMapper priceMapper;
 
-  public PriceService(JdbcTemplate jdbcTemplate) {
-    this.jdbcTemplate = jdbcTemplate;
+  public PriceService(PriceLibraryMapper priceMapper) {
+    this.priceMapper = priceMapper;
   }
 
   public List<PriceResponse> list() {
-    return jdbcTemplate.query(
-        """
-        SELECT id, asset_category, asset_name, specification, unit, base_price,
-               effective_date, expiry_date, remark
-        FROM price_library
-        WHERE deleted = 0
-        ORDER BY id DESC
-        """,
-        (rs, rowNum) -> new PriceResponse(
-            rs.getLong("id"),
-            rs.getString("asset_category"),
-            rs.getString("asset_name"),
-            rs.getString("specification"),
-            rs.getString("unit"),
-            rs.getBigDecimal("base_price"),
-            asString(rs.getDate("effective_date")),
-            asString(rs.getDate("expiry_date")),
-            rs.getString("remark")
-        )
+    List<PriceLibrary> entities = priceMapper.selectList(
+        new LambdaQueryWrapper<PriceLibrary>().orderByDesc(PriceLibrary::getId)
     );
+    return entities.stream().map(this::toResponse).toList();
+  }
+
+  public List<PriceResponse> lookup(String category, String name) {
+    LambdaQueryWrapper<PriceLibrary> wrapper = new LambdaQueryWrapper<PriceLibrary>()
+        .eq(PriceLibrary::getAssetCategory, category)
+        .and(w -> w.isNull(PriceLibrary::getEffectiveDate).or().le(PriceLibrary::getEffectiveDate, LocalDate.now()))
+        .and(w -> w.isNull(PriceLibrary::getExpiryDate).or().ge(PriceLibrary::getExpiryDate, LocalDate.now()));
+    if (name != null && !name.isBlank()) {
+      wrapper.like(PriceLibrary::getAssetName, name.trim());
+    }
+    wrapper.orderByAsc(PriceLibrary::getAssetName).orderByAsc(PriceLibrary::getSpecification);
+    return priceMapper.selectList(wrapper).stream().map(this::toResponse).toList();
   }
 
   @Transactional
   public PriceResponse create(PriceRequest request) {
-    Long id = jdbcTemplate.queryForObject(
-        """
-        INSERT INTO price_library (
-          asset_category, asset_name, specification, unit, base_price,
-          effective_date, expiry_date, remark
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        RETURNING id
-        """,
-        Long.class,
-        request.assetCategory(),
-        request.assetName(),
-        request.specification(),
-        request.unit(),
-        request.basePrice(),
-        asDate(request.effectiveDate()),
-        asDate(request.expiryDate()),
-        request.remark()
-    );
-    if (id == null) {
-      throw new IllegalArgumentException("价格项创建失败");
-    }
-    return getById(id);
+    PriceLibrary entity = toEntity(request);
+    priceMapper.insert(entity);
+    return toResponse(priceMapper.selectById(entity.getId()));
   }
 
   @Transactional
   public PriceResponse update(Long id, PriceRequest request) {
     ensureExists(id);
-    jdbcTemplate.update(
-        """
-        UPDATE price_library
-        SET asset_category = ?,
-            asset_name = ?,
-            specification = ?,
-            unit = ?,
-            base_price = ?,
-            effective_date = ?,
-            expiry_date = ?,
-            remark = ?,
-            updated_at = CURRENT_TIMESTAMP
-        WHERE id = ? AND deleted = 0
-        """,
-        request.assetCategory(),
-        request.assetName(),
-        request.specification(),
-        request.unit(),
-        request.basePrice(),
-        asDate(request.effectiveDate()),
-        asDate(request.expiryDate()),
-        request.remark(),
-        id
-    );
-    return getById(id);
+    PriceLibrary entity = toEntity(request);
+    entity.setId(id);
+    priceMapper.updateById(entity);
+    return toResponse(priceMapper.selectById(id));
   }
 
   @Transactional
   public void delete(Long id) {
     ensureExists(id);
-    jdbcTemplate.update("UPDATE price_library SET deleted = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?", id);
-  }
-
-  private PriceResponse getById(Long id) {
-    List<PriceResponse> results = jdbcTemplate.query(
-        """
-        SELECT id, asset_category, asset_name, specification, unit, base_price,
-               effective_date, expiry_date, remark
-        FROM price_library
-        WHERE id = ? AND deleted = 0
-        """,
-        (rs, rowNum) -> new PriceResponse(
-            rs.getLong("id"),
-            rs.getString("asset_category"),
-            rs.getString("asset_name"),
-            rs.getString("specification"),
-            rs.getString("unit"),
-            rs.getBigDecimal("base_price"),
-            asString(rs.getDate("effective_date")),
-            asString(rs.getDate("expiry_date")),
-            rs.getString("remark")
-        ),
-        id
-    );
-    if (results.isEmpty()) {
-      throw new IllegalArgumentException("价格项不存在: " + id);
-    }
-    return results.get(0);
+    priceMapper.deleteById(id);
   }
 
   private void ensureExists(Long id) {
-    Integer count = jdbcTemplate.queryForObject(
-        "SELECT count(*) FROM price_library WHERE id = ? AND deleted = 0",
-        Integer.class,
-        id
-    );
-    if (count == null || count == 0) {
+    if (priceMapper.selectById(id) == null) {
       throw new IllegalArgumentException("价格项不存在: " + id);
     }
   }
 
-  private Date asDate(String value) {
+  private PriceLibrary toEntity(PriceRequest request) {
+    PriceLibrary entity = new PriceLibrary();
+    entity.setAssetCategory(request.assetCategory());
+    entity.setAssetName(request.assetName());
+    entity.setSpecification(request.specification());
+    entity.setUnit(request.unit());
+    entity.setBasePrice(request.basePrice());
+    entity.setEffectiveDate(parseDate(request.effectiveDate()));
+    entity.setExpiryDate(parseDate(request.expiryDate()));
+    entity.setRemark(request.remark());
+    return entity;
+  }
+
+  private PriceResponse toResponse(PriceLibrary entity) {
+    return new PriceResponse(
+        entity.getId(),
+        entity.getAssetCategory(),
+        entity.getAssetName(),
+        entity.getSpecification(),
+        entity.getUnit(),
+        entity.getBasePrice(),
+        entity.getEffectiveDate() == null ? null : entity.getEffectiveDate().toString(),
+        entity.getExpiryDate() == null ? null : entity.getExpiryDate().toString(),
+        entity.getRemark()
+    );
+  }
+
+  private LocalDate parseDate(String value) {
     if (value == null || value.isBlank()) {
       return null;
     }
-    return Date.valueOf(LocalDate.parse(value));
-  }
-
-  private String asString(Date value) {
-    return value == null ? null : value.toLocalDate().toString();
+    return LocalDate.parse(value);
   }
 }

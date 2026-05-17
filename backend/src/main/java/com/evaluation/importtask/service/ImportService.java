@@ -1,10 +1,19 @@
 package com.evaluation.importtask.service;
 
+import com.evaluation.appendage.entity.AppendageEvaluationEntity;
+import com.evaluation.appendage.entity.AppendageEvaluationItemEntity;
+import com.evaluation.appendage.mapper.AppendageEvaluationItemMapper;
+import com.evaluation.appendage.mapper.AppendageEvaluationMapper;
 import com.evaluation.importtask.model.ImportResult;
+import com.evaluation.project.mapper.EvaluationPartyMapper;
+import com.evaluation.project.mapper.EvaluationProjectMapper;
+import com.evaluation.seedling.entity.SeedlingEvaluationEntity;
+import com.evaluation.seedling.entity.SeedlingEvaluationItemEntity;
+import com.evaluation.seedling.mapper.SeedlingEvaluationItemMapper;
+import com.evaluation.seedling.mapper.SeedlingEvaluationMapper;
 import java.io.IOException;
 import java.io.InputStream;
 import java.math.BigDecimal;
-import java.sql.Date;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
@@ -16,7 +25,6 @@ import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -26,11 +34,26 @@ public class ImportService {
 
   private static final Pattern SINGLE_NUMBER_PATTERN = Pattern.compile("-?\\d+(?:\\.\\d+)?");
 
-  private final JdbcTemplate jdbcTemplate;
+  private final SeedlingEvaluationMapper seedlingMapper;
+  private final SeedlingEvaluationItemMapper seedlingItemMapper;
+  private final AppendageEvaluationMapper appendageMapper;
+  private final AppendageEvaluationItemMapper appendageItemMapper;
+  private final EvaluationProjectMapper projectMapper;
+  private final EvaluationPartyMapper partyMapper;
   private final DataFormatter formatter = new DataFormatter();
 
-  public ImportService(JdbcTemplate jdbcTemplate) {
-    this.jdbcTemplate = jdbcTemplate;
+  public ImportService(SeedlingEvaluationMapper seedlingMapper,
+                       SeedlingEvaluationItemMapper seedlingItemMapper,
+                       AppendageEvaluationMapper appendageMapper,
+                       AppendageEvaluationItemMapper appendageItemMapper,
+                       EvaluationProjectMapper projectMapper,
+                       EvaluationPartyMapper partyMapper) {
+    this.seedlingMapper = seedlingMapper;
+    this.seedlingItemMapper = seedlingItemMapper;
+    this.appendageMapper = appendageMapper;
+    this.appendageItemMapper = appendageItemMapper;
+    this.projectMapper = projectMapper;
+    this.partyMapper = partyMapper;
   }
 
   @Transactional
@@ -42,51 +65,35 @@ public class ImportService {
       Sheet sheet = workbook.getSheetAt(workbook.getNumberOfSheets() > 1 ? 1 : 0);
       List<SeedlingRow> rows = parseSeedlingRows(sheet);
       if (rows.isEmpty()) {
-        throw new IllegalArgumentException("苗木模板当前没有填写任何有效明细，请先在“苗木清查评估明细表”中补充苗木名称、数量和单价后再导入");
+        throw new IllegalArgumentException("苗木模板当前没有填写任何有效明细，请先在"苗木清查评估明细表"中补充苗木名称、数量和单价后再导入");
       }
 
       String evaluationNo = buildNo("SEIMP");
       BigDecimal totalAmount = rows.stream().map(SeedlingRow::amount).reduce(BigDecimal.ZERO, BigDecimal::add);
-      Long evaluationId = jdbcTemplate.queryForObject(
-          """
-          INSERT INTO seedling_evaluation (
-            project_id, party_id, evaluation_no, benchmark_date, survey_date,
-            total_amount, status, remark
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-          RETURNING id
-          """,
-          Long.class,
-          projectId,
-          partyId,
-          evaluationNo,
-          Date.valueOf(LocalDate.now()),
-          Date.valueOf(LocalDate.now()),
-          totalAmount,
-          "DRAFT",
-          "Excel 导入"
-      );
-      if (evaluationId == null) {
-        throw new IllegalArgumentException("苗木导入失败");
-      }
+
+      SeedlingEvaluationEntity evaluation = new SeedlingEvaluationEntity();
+      evaluation.setProjectId(projectId);
+      evaluation.setPartyId(partyId);
+      evaluation.setEvaluationNo(evaluationNo);
+      evaluation.setBenchmarkDate(LocalDate.now());
+      evaluation.setSurveyDate(LocalDate.now());
+      evaluation.setTotalAmount(totalAmount);
+      evaluation.setStatus("DRAFT");
+      evaluation.setRemark("Excel 导入");
+      seedlingMapper.insert(evaluation);
 
       for (SeedlingRow row : rows) {
-        jdbcTemplate.update(
-            """
-            INSERT INTO seedling_evaluation_item (
-              evaluation_id, line_no, seedling_name, specification, unit,
-              quantity, unit_price, amount, remark
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            evaluationId,
-            row.lineNo(),
-            row.seedlingName(),
-            row.specification(),
-            row.unit(),
-            row.quantity(),
-            row.unitPrice(),
-            row.amount(),
-            row.remark()
-        );
+        SeedlingEvaluationItemEntity item = new SeedlingEvaluationItemEntity();
+        item.setEvaluationId(evaluation.getId());
+        item.setLineNo(row.lineNo());
+        item.setSeedlingName(row.seedlingName());
+        item.setSpecification(row.specification());
+        item.setUnit(row.unit());
+        item.setQuantity(row.quantity());
+        item.setUnitPrice(row.unitPrice());
+        item.setAmount(row.amount());
+        item.setRemark(row.remark());
+        seedlingItemMapper.insert(item);
       }
 
       return new ImportResult("SEEDLING", rows.size(), "苗木模板导入成功，生成评估单：" + evaluationNo);
@@ -111,58 +118,37 @@ public class ImportService {
       BigDecimal totalAmount = structureAmount.add(equipmentAmount).add(seedlingAmount);
       String evaluationNo = buildNo("APIMP");
 
-      Long evaluationId = jdbcTemplate.queryForObject(
-          """
-          INSERT INTO appendage_evaluation (
-            project_id, party_id, evaluation_no, tenant_name, location_text,
-            benchmark_date, survey_date, structure_amount, equipment_move_amount,
-            seedling_move_amount, total_amount, status, remark
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-          RETURNING id
-          """,
-          Long.class,
-          projectId,
-          partyId,
-          evaluationNo,
-          null,
-          null,
-          Date.valueOf(LocalDate.now()),
-          Date.valueOf(LocalDate.now()),
-          structureAmount,
-          equipmentAmount,
-          seedlingAmount,
-          totalAmount,
-          "DRAFT",
-          "Excel 导入"
-      );
-      if (evaluationId == null) {
-        throw new IllegalArgumentException("附属物导入失败");
-      }
+      AppendageEvaluationEntity evaluation = new AppendageEvaluationEntity();
+      evaluation.setProjectId(projectId);
+      evaluation.setPartyId(partyId);
+      evaluation.setEvaluationNo(evaluationNo);
+      evaluation.setBenchmarkDate(LocalDate.now());
+      evaluation.setSurveyDate(LocalDate.now());
+      evaluation.setStructureAmount(structureAmount);
+      evaluation.setEquipmentMoveAmount(equipmentAmount);
+      evaluation.setSeedlingMoveAmount(seedlingAmount);
+      evaluation.setTotalAmount(totalAmount);
+      evaluation.setStatus("DRAFT");
+      evaluation.setRemark("Excel 导入");
+      appendageMapper.insert(evaluation);
 
       for (AppendageRow row : rows) {
-        jdbcTemplate.update(
-            """
-            INSERT INTO appendage_evaluation_item (
-              evaluation_id, asset_type, asset_code, line_no, item_name, specification,
-              unit, quantity, replacement_unit_price, replacement_amount, novelty_rate,
-              evaluation_unit_price, evaluation_amount, remark
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            evaluationId,
-            row.assetType(),
-            row.assetCode(),
-            row.lineNo(),
-            row.itemName(),
-            row.specification(),
-            row.unit(),
-            row.quantity(),
-            row.replacementUnitPrice(),
-            row.replacementAmount(),
-            row.noveltyRate(),
-            row.evaluationUnitPrice(),
-            row.evaluationAmount(),
-            row.remark()
-        );
+        AppendageEvaluationItemEntity item = new AppendageEvaluationItemEntity();
+        item.setEvaluationId(evaluation.getId());
+        item.setAssetType(row.assetType());
+        item.setAssetCode(row.assetCode());
+        item.setLineNo(row.lineNo());
+        item.setItemName(row.itemName());
+        item.setSpecification(row.specification());
+        item.setUnit(row.unit());
+        item.setQuantity(row.quantity());
+        item.setReplacementUnitPrice(row.replacementUnitPrice());
+        item.setReplacementAmount(row.replacementAmount());
+        item.setNoveltyRate(row.noveltyRate());
+        item.setEvaluationUnitPrice(row.evaluationUnitPrice());
+        item.setEvaluationAmount(row.evaluationAmount());
+        item.setRemark(row.remark());
+        appendageItemMapper.insert(item);
       }
 
       return new ImportResult("APPENDAGE", rows.size(), "附属物模板导入成功，生成评估单：" + evaluationNo);
@@ -323,24 +309,13 @@ public class ImportService {
   }
 
   private void ensureProjectExists(Long projectId) {
-    Integer count = jdbcTemplate.queryForObject(
-        "SELECT count(*) FROM evaluation_project WHERE id = ? AND deleted = 0",
-        Integer.class,
-        projectId
-    );
-    if (count == null || count == 0) {
+    if (projectMapper.selectById(projectId) == null) {
       throw new IllegalArgumentException("项目不存在: " + projectId);
     }
   }
 
   private void ensurePartyExists(Long projectId, Long partyId) {
-    Integer count = jdbcTemplate.queryForObject(
-        "SELECT count(*) FROM evaluation_party WHERE id = ? AND project_id = ? AND deleted = 0",
-        Integer.class,
-        partyId,
-        projectId
-    );
-    if (count == null || count == 0) {
+    if (partyMapper.selectById(partyId) == null) {
       throw new IllegalArgumentException("被评估对象不存在: " + partyId);
     }
   }

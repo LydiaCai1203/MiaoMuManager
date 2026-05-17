@@ -16,6 +16,8 @@ public record HouseEvaluationResponse(
     BigDecimal orientationFactor,
     BigDecimal decorationFactor,
     BigDecimal totalAmount,
+    BigDecimal suggestedUnitPrice,
+    Integer priceAdjusted,
     String benchmarkDate,
     String surveyDate,
     String status,

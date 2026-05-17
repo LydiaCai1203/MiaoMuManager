@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -28,6 +29,13 @@ public class PriceController {
   @GetMapping
   public ApiResponse<List<PriceResponse>> list() {
     return ApiResponse.success(priceService.list());
+  }
+
+  @GetMapping("/lookup")
+  public ApiResponse<List<PriceResponse>> lookup(
+      @RequestParam String category,
+      @RequestParam(required = false) String name) {
+    return ApiResponse.success(priceService.lookup(category, name));
   }
 
   @PostMapping

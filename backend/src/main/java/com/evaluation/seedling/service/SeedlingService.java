@@ -1,69 +1,54 @@
 package com.evaluation.seedling.service;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.evaluation.project.mapper.EvaluationPartyMapper;
+import com.evaluation.project.mapper.EvaluationProjectMapper;
+import com.evaluation.seedling.entity.SeedlingEvaluationEntity;
+import com.evaluation.seedling.entity.SeedlingEvaluationItemEntity;
+import com.evaluation.seedling.mapper.SeedlingEvaluationItemMapper;
+import com.evaluation.seedling.mapper.SeedlingEvaluationMapper;
 import com.evaluation.seedling.model.SeedlingEvaluationItemRequest;
 import com.evaluation.seedling.model.SeedlingEvaluationItemResponse;
 import com.evaluation.seedling.model.SeedlingEvaluationRequest;
 import com.evaluation.seedling.model.SeedlingEvaluationResponse;
 import java.math.BigDecimal;
-import java.sql.Date;
 import java.time.LocalDate;
 import java.util.List;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class SeedlingService {
 
-  private final JdbcTemplate jdbcTemplate;
+  private final SeedlingEvaluationMapper evaluationMapper;
+  private final SeedlingEvaluationItemMapper itemMapper;
+  private final EvaluationProjectMapper projectMapper;
+  private final EvaluationPartyMapper partyMapper;
 
-  public SeedlingService(JdbcTemplate jdbcTemplate) {
-    this.jdbcTemplate = jdbcTemplate;
+  public SeedlingService(SeedlingEvaluationMapper evaluationMapper,
+                         SeedlingEvaluationItemMapper itemMapper,
+                         EvaluationProjectMapper projectMapper,
+                         EvaluationPartyMapper partyMapper) {
+    this.evaluationMapper = evaluationMapper;
+    this.itemMapper = itemMapper;
+    this.projectMapper = projectMapper;
+    this.partyMapper = partyMapper;
   }
 
   public List<SeedlingEvaluationResponse> list() {
-    String sql = """
-        SELECT id, project_id, party_id, evaluation_no, benchmark_date, survey_date,
-               total_amount, status, remark
-        FROM seedling_evaluation
-        WHERE deleted = 0
-        ORDER BY id DESC
-        """;
-    return jdbcTemplate.query(sql, (rs, rowNum) -> toResponse(
-        rs.getLong("id"),
-        rs.getLong("project_id"),
-        rs.getLong("party_id"),
-        rs.getString("evaluation_no"),
-        asString(rs.getDate("benchmark_date")),
-        asString(rs.getDate("survey_date")),
-        rs.getBigDecimal("total_amount"),
-        rs.getString("status"),
-        rs.getString("remark")
-    ));
+    List<SeedlingEvaluationEntity> entities = evaluationMapper.selectList(
+        new LambdaQueryWrapper<SeedlingEvaluationEntity>().orderByDesc(SeedlingEvaluationEntity::getId)
+    );
+    return entities.stream().map(this::toResponse).toList();
   }
 
   public SeedlingEvaluationResponse detail(Long id) {
-    String sql = """
-        SELECT id, project_id, party_id, evaluation_no, benchmark_date, survey_date,
-               total_amount, status, remark
-        FROM seedling_evaluation
-        WHERE id = ? AND deleted = 0
-        """;
-    List<SeedlingEvaluationResponse> results = jdbcTemplate.query(sql, (rs, rowNum) -> toResponse(
-        rs.getLong("id"),
-        rs.getLong("project_id"),
-        rs.getLong("party_id"),
-        rs.getString("evaluation_no"),
-        asString(rs.getDate("benchmark_date")),
-        asString(rs.getDate("survey_date")),
-        rs.getBigDecimal("total_amount"),
-        rs.getString("status"),
-        rs.getString("remark")
-    ), id);
-    if (results.isEmpty()) {
+    SeedlingEvaluationEntity entity = evaluationMapper.selectById(id);
+    if (entity == null) {
       throw new IllegalArgumentException("苗木评估单不存在: " + id);
     }
-    return results.get(0);
+    return toResponse(entity);
   }
 
   @Transactional
@@ -75,32 +60,19 @@ public class SeedlingService {
         .map(SeedlingEvaluationItemRequest::amount)
         .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-    String sql = """
-        INSERT INTO seedling_evaluation (
-          project_id, party_id, evaluation_no, benchmark_date, survey_date,
-          total_amount, status, remark
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        RETURNING id
-        """;
-    Long key = jdbcTemplate.queryForObject(
-        sql,
-        Long.class,
-        request.projectId(),
-        request.partyId(),
-        request.evaluationNo(),
-        asDate(request.benchmarkDate()),
-        asDate(request.surveyDate()),
-        totalAmount,
-        request.status(),
-        request.remark()
-    );
-    if (key == null) {
-      throw new IllegalArgumentException("苗木评估单创建失败");
-    }
+    SeedlingEvaluationEntity entity = new SeedlingEvaluationEntity();
+    entity.setProjectId(request.projectId());
+    entity.setPartyId(request.partyId());
+    entity.setEvaluationNo(request.evaluationNo());
+    entity.setBenchmarkDate(parseDate(request.benchmarkDate()));
+    entity.setSurveyDate(parseDate(request.surveyDate()));
+    entity.setTotalAmount(totalAmount);
+    entity.setStatus(request.status());
+    entity.setRemark(request.remark());
+    evaluationMapper.insert(entity);
 
-    Long evaluationId = key;
-    saveItems(evaluationId, request.items());
-    return detail(evaluationId);
+    saveItems(entity.getId(), request.items());
+    return detail(entity.getId());
   }
 
   @Transactional
@@ -108,28 +80,26 @@ public class SeedlingService {
     detail(id);
     ensureProjectExists(request.projectId());
     ensurePartyExists(request.projectId(), request.partyId());
+
     BigDecimal totalAmount = request.items().stream()
         .map(SeedlingEvaluationItemRequest::amount)
         .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-    jdbcTemplate.update(
-        """
-        UPDATE seedling_evaluation
-        SET project_id = ?, party_id = ?, evaluation_no = ?, benchmark_date = ?, survey_date = ?,
-            total_amount = ?, status = ?, remark = ?, updated_at = CURRENT_TIMESTAMP
-        WHERE id = ? AND deleted = 0
-        """,
-        request.projectId(),
-        request.partyId(),
-        request.evaluationNo(),
-        asDate(request.benchmarkDate()),
-        asDate(request.surveyDate()),
-        totalAmount,
-        request.status(),
-        request.remark(),
-        id
-    );
-    jdbcTemplate.update("UPDATE seedling_evaluation_item SET deleted = 1, updated_at = CURRENT_TIMESTAMP WHERE evaluation_id = ?", id);
+    SeedlingEvaluationEntity entity = new SeedlingEvaluationEntity();
+    entity.setId(id);
+    entity.setProjectId(request.projectId());
+    entity.setPartyId(request.partyId());
+    entity.setEvaluationNo(request.evaluationNo());
+    entity.setBenchmarkDate(parseDate(request.benchmarkDate()));
+    entity.setSurveyDate(parseDate(request.surveyDate()));
+    entity.setTotalAmount(totalAmount);
+    entity.setStatus(request.status());
+    entity.setRemark(request.remark());
+    evaluationMapper.updateById(entity);
+
+    // Soft-delete old items then re-insert
+    itemMapper.delete(new LambdaQueryWrapper<SeedlingEvaluationItemEntity>()
+        .eq(SeedlingEvaluationItemEntity::getEvaluationId, id));
     saveItems(id, request.items());
     return detail(id);
   }
@@ -137,111 +107,71 @@ public class SeedlingService {
   @Transactional
   public void delete(Long id) {
     detail(id);
-    jdbcTemplate.update("UPDATE seedling_evaluation_item SET deleted = 1, updated_at = CURRENT_TIMESTAMP WHERE evaluation_id = ?", id);
-    jdbcTemplate.update("UPDATE seedling_evaluation SET deleted = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?", id);
+    itemMapper.delete(new LambdaQueryWrapper<SeedlingEvaluationItemEntity>()
+        .eq(SeedlingEvaluationItemEntity::getEvaluationId, id));
+    evaluationMapper.deleteById(id);
   }
 
   private void saveItems(Long evaluationId, List<SeedlingEvaluationItemRequest> items) {
-    String sql = """
-        INSERT INTO seedling_evaluation_item (
-          evaluation_id, line_no, seedling_name, specification, unit,
-          quantity, unit_price, amount, remark
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """;
     for (SeedlingEvaluationItemRequest item : items) {
-      jdbcTemplate.update(
-          sql,
-          evaluationId,
-          item.lineNo(),
-          item.seedlingName(),
-          item.specification(),
-          item.unit() == null || item.unit().isBlank() ? "株" : item.unit(),
-          item.quantity(),
-          item.unitPrice(),
-          item.amount(),
-          item.remark()
-      );
+      SeedlingEvaluationItemEntity entity = new SeedlingEvaluationItemEntity();
+      entity.setEvaluationId(evaluationId);
+      entity.setLineNo(item.lineNo());
+      entity.setSeedlingName(item.seedlingName());
+      entity.setSpecification(item.specification());
+      entity.setUnit(item.unit() == null || item.unit().isBlank() ? "株" : item.unit());
+      entity.setQuantity(item.quantity());
+      entity.setUnitPrice(item.unitPrice());
+      entity.setAmount(item.amount());
+      entity.setRemark(item.remark());
+      itemMapper.insert(entity);
     }
   }
 
   private List<SeedlingEvaluationItemResponse> listItems(Long evaluationId) {
-    String sql = """
-        SELECT id, evaluation_id, line_no, seedling_name, specification, unit,
-               quantity, unit_price, amount, remark
-        FROM seedling_evaluation_item
-        WHERE evaluation_id = ? AND deleted = 0
-        ORDER BY line_no
-        """;
-    return jdbcTemplate.query(sql, (rs, rowNum) -> new SeedlingEvaluationItemResponse(
-        rs.getLong("id"),
-        rs.getLong("evaluation_id"),
-        rs.getInt("line_no"),
-        rs.getString("seedling_name"),
-        rs.getString("specification"),
-        rs.getString("unit"),
-        rs.getBigDecimal("quantity"),
-        rs.getBigDecimal("unit_price"),
-        rs.getBigDecimal("amount"),
-        rs.getString("remark")
-    ), evaluationId);
+    List<SeedlingEvaluationItemEntity> items = itemMapper.selectList(
+        new LambdaQueryWrapper<SeedlingEvaluationItemEntity>()
+            .eq(SeedlingEvaluationItemEntity::getEvaluationId, evaluationId)
+            .orderByAsc(SeedlingEvaluationItemEntity::getLineNo)
+    );
+    return items.stream().map(e -> new SeedlingEvaluationItemResponse(
+        e.getId(), e.getEvaluationId(), e.getLineNo(), e.getSeedlingName(),
+        e.getSpecification(), e.getUnit(), e.getQuantity(), e.getUnitPrice(),
+        e.getAmount(), e.getRemark()
+    )).toList();
   }
 
-  private SeedlingEvaluationResponse toResponse(
-      Long id,
-      Long projectId,
-      Long partyId,
-      String evaluationNo,
-      String benchmarkDate,
-      String surveyDate,
-      BigDecimal totalAmount,
-      String status,
-      String remark
-  ) {
+  private SeedlingEvaluationResponse toResponse(SeedlingEvaluationEntity entity) {
     return new SeedlingEvaluationResponse(
-        id,
-        projectId,
-        partyId,
-        evaluationNo,
-        benchmarkDate,
-        surveyDate,
-        totalAmount,
-        status,
-        remark,
-        listItems(id)
+        entity.getId(),
+        entity.getProjectId(),
+        entity.getPartyId(),
+        entity.getEvaluationNo(),
+        entity.getBenchmarkDate() == null ? null : entity.getBenchmarkDate().toString(),
+        entity.getSurveyDate() == null ? null : entity.getSurveyDate().toString(),
+        entity.getTotalAmount(),
+        entity.getStatus(),
+        entity.getRemark(),
+        listItems(entity.getId())
     );
   }
 
   private void ensureProjectExists(Long projectId) {
-    Integer count = jdbcTemplate.queryForObject(
-        "SELECT count(*) FROM evaluation_project WHERE id = ? AND deleted = 0",
-        Integer.class,
-        projectId
-    );
-    if (count == null || count == 0) {
+    if (projectMapper.selectById(projectId) == null) {
       throw new IllegalArgumentException("项目不存在: " + projectId);
     }
   }
 
   private void ensurePartyExists(Long projectId, Long partyId) {
-    Integer count = jdbcTemplate.queryForObject(
-        "SELECT count(*) FROM evaluation_party WHERE id = ? AND project_id = ? AND deleted = 0",
-        Integer.class,
-        partyId,
-        projectId
-    );
-    if (count == null || count == 0) {
+    if (partyMapper.selectById(partyId) == null) {
       throw new IllegalArgumentException("被评估对象不存在: " + partyId);
     }
   }
 
-  private Date asDate(String value) {
+  private LocalDate parseDate(String value) {
     if (value == null || value.isBlank()) {
       return null;
     }
-    return Date.valueOf(LocalDate.parse(value));
-  }
-
-  private String asString(Date value) {
-    return value == null ? null : value.toLocalDate().toString();
+    return LocalDate.parse(value);
   }
 }

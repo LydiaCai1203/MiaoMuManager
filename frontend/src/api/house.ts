@@ -14,6 +14,8 @@ export interface HouseEvaluationRecord {
   orientationFactor: number
   decorationFactor: number
   totalAmount: number
+  suggestedUnitPrice?: number | null
+  priceAdjusted?: number | null
   benchmarkDate?: string | null
   surveyDate?: string | null
   status: string

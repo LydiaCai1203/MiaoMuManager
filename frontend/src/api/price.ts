@@ -38,3 +38,7 @@ export function updatePrice(id: number, payload: PricePayload) {
 export function deletePrice(id: number) {
   return request.delete(`/prices/${id}`)
 }
+
+export function lookupPrices(category: string, name?: string) {
+  return request.get('/prices/lookup', { params: { category, name: name || undefined } })
+}
